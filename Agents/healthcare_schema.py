@@ -2,8 +2,6 @@ from typing import List, Optional, Dict, Any, Literal
 from datetime import date
 from pydantic import BaseModel, Field, field_validator
 
-# --- Sub-Models ---
-
 class Address(BaseModel):
     street_address_1: Optional[str] = Field(None, description="Primary street line")
     street_address_2: Optional[str] = Field(None, description="Suite, Unit, or Building")
