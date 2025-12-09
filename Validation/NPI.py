@@ -93,3 +93,5 @@ if __name__ == "__main__":
 
         print(result['primary_practice_address'])   # print the primary practice address
 
+# {'address_1': '14610 WINDSOR ST', 'address_2': None, 'city': 'LEAWOOD', 'state': 'KS', 
+# 'postal_code': '662243727', 'telephone_number': '913-706-6304', 'country_code': 'US'}
