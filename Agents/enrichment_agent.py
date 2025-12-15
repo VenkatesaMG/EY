@@ -183,7 +183,7 @@ class EnrichmentManager:
             else:
                 return msg['content']
                 
-        return "Agent timed out after 10 steps."
+        return "Agent timed out after 15 steps."
 
 if __name__ == "__main__":
     manager = EnrichmentManager()
