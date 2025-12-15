@@ -12,3 +12,6 @@ pytesseract
 Pillow
 google-generativeai
 requests
+sqlalchemy
+asyncpg
+greenlet

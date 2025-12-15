@@ -39,7 +39,7 @@ def validate_csv_with_gemini(
         writer.writeheader()
 
         for i, row in enumerate(reader, start=1):
-            npi = (row.get("National Provider Identifier") or "").strip()
+            npi = (row.get("npi") or "").strip()
             print(f"[{i}] Processing NPI={npi}...")
 
             npi_info = lookup_npi(npi) if npi else None
@@ -83,7 +83,7 @@ def validate_csv_with_gemini(
 
 if __name__ == "__main__":
     validate_csv_with_gemini(
-        r"C:\Users\Dhile\Projects\Health Data Validation\EY\Data\Healthcare Providers.csv",
-        r"C:\Users\Dhile\Projects\Health Data Validation\EY\Data\providers_validated_gemini.csv",
+        r"C:\Users\Dhile\Projects\Health Data Validation\EY\Data\clean_output.csv",
+        r"C:\Users\Dhile\Projects\Health Data Validation\EY\Data\validated_gemini.csv",
     )
 
