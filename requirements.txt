@@ -1,0 +1,17 @@
+fastapi
+uvicorn
+pydantic
+python-dotenv
+langchain-google-genai
+langchain-core
+ollama
+selenium
+webdriver-manager
+pypdf
+pytesseract
+Pillow
+google-generativeai
+requests
+sqlalchemy
+asyncpg
+greenlet

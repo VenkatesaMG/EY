@@ -1,0 +1,13 @@
+index,npi,lname,fname,m_initial,cred,gender,etype,addr1,addr2,city,zip,state,country,ptype,npi_lookup_success,gemini_overall_match,gemini_confidence,gemini_issues,gemini_name_match,gemini_address_match,gemini_phone_match,gemini_specialty_match,gemini_explanation
+8774979,1891106191,UPADHYAYULA,SATYASREE,,M.D.,F,I,1402 S GRAND BLVD,FDT 14TH FLOOR,SAINT LOUIS,631041004.0,MO,US,Internal Medicine,True,False,20,address_mismatch;phone_missing_in_directory;specialty_mismatch,True,False,False,False,"While the provider's name 'SATYASREE UPADHYAYULA' matches exactly, there are significant discrepancies in the address, phone number, and specialty. The directory lists an address in Saint Louis, MO, and 'Internal Medicine' as the specialty. The NPI record, however, shows a primary practice address in Leawood, KS, and a specialty as 'Student in an Organized Health Care Education/Training Program', along with a phone number missing from the directory. Due to these critical mismatches in location and service, these records do not appear to represent the same provider at the same practice location."
+3354385,1346202256,JONES,WENDY,P,M.D.,F,I,2950 VILLAGE DR,,FAYETTEVILLE,283043815.0,NC,US,Obstetrics & Gynecology,True,,,,,,,,
+3001884,1306820956,DUROCHER,RICHARD,W,DPM,M,I,20 WASHINGTON AVE,STE 212,NORTH HAVEN,64732343.0,CT,US,Podiatry,True,,,,,,,,
+7594822,1770523540,FULLARD,JASPER,,MD,M,I,5746 N BROADWAY ST,,KANSAS CITY,641183998.0,MO,US,Internal Medicine,True,,,,,,,,
+746159,1073627758,PERROTTI,ANTHONY,E,DO,M,I,875 MILITARY TRL,SUITE 200,JUPITER,334585700.0,FL,US,Internal Medicine,True,,,,,,,,
+3443985,1346571551,PUGH,JOHN,R,DPT,M,I,504 ALBEMARLE SQ,,CHARLOTTESVILLE,229017405.0,VA,US,Physical Therapist in Private Practice,True,,,,,,,,
+2137027,1215943535,BRUMITT,TOM,B,DO,M,I,70 DOCTORS PARK,,CAPE GIRARDEAU,637034928.0,MO,US,Diagnostic Radiology,True,,,,,,,,
+6169160,1629160551,GALBREATH,RONALD,G,M.D.,M,I,12522 E. LAMBERT ROAD,SUITE D,WHITTIER,906062758.0,CA,US,Family Practice,True,,,,,,,,
+5086226,1518929124,BOONE,RALPH,M,D.O.,M,I,1215 DUNN AVE,,JACKSONVILLE,322186330.0,FL,US,Family Practice,True,,,,,,,,
+3900718,1396781134,METWEST INC,,,,,O,695 S BROADWAY,,DENVER,802094003.0,CO,US,Clinical Laboratory,False,,,,,,,,
+2029507,1205869104,ROSEN,LAUREN,S,M.D,F,I,306 E LANCASTER AVE STE 300,,WYNNEWOOD,190962105.0,PA,US,Internal Medicine,True,,,,,,,,
+7138229,1720086507,RODRIGUEZ,ERIC,J,M.D.,M,I,2323 W ROSE GARDEN LN,,PHOENIX,850272530.0,AZ,US,Diagnostic Radiology,True,,,,,,,,
