@@ -1,25 +1,36 @@
 import ollama
-import json
 import pandas as pd
 from geopy.distance import geodesic
 from typing import List, Dict
+import re
+import json
 
 def load_mock_database():
     providers = [
-        {"id": "P1", "name": "Dr. Smith", "specialty": "Cardiology", "lat": 38.6270, "lon": -90.1994, "city": "St. Louis"}, # Downtown
-        {"id": "P2", "name": "Dr. Jones", "specialty": "Cardiology", "lat": 38.6275, "lon": -90.2000, "city": "St. Louis"}, # Downtown
-        {"id": "P3", "name": "Dr. Ray", "specialty": "Pediatrics", "lat": 38.6500, "lon": -90.3500, "city": "Clayton"},   # Suburb
+        {"id": "P1", "name": "Dr. Smith", "specialty": "Cardiology", "lat": 38.6270, "lon": -90.1994, "city": "St. Louis"},
+        {"id": "P2", "name": "Dr. Jones", "specialty": "Cardiology", "lat": 38.6275, "lon": -90.2000, "city": "St. Louis"},
+        {"id": "P3", "name": "Dr. Ray", "specialty": "Pediatrics", "lat": 38.6500, "lon": -90.3500, "city": "Clayton"},
     ]
-    
+
     members = [
         {"id": "M1", "lat": 38.6272, "lon": -90.1990, "needs": ["Cardiology"]}, # Near Downtown
         {"id": "M2", "lat": 38.7900, "lon": -90.3300, "needs": ["Cardiology"]}, # Florissant (Far North)
         {"id": "M3", "lat": 38.7950, "lon": -90.3350, "needs": ["Cardiology"]}, # Florissant (Far North)
         {"id": "M4", "lat": 38.7920, "lon": -90.3320, "needs": ["Cardiology"]}, # Florissant (Far North)
     ]
+
     return pd.DataFrame(providers), pd.DataFrame(members)
 
 df_providers, df_members = load_mock_database()
+
+def parse_action(text):
+    match = re.search(r"Action:\s*(\w+)\[(.*)\]", text, re.DOTALL)
+    if not match:
+        return None, None
+
+    fn_name = match.group(1)
+    args = json.loads(match.group(2))
+    return fn_name, args
 
 def analyze_specialty_gaps(specialty: str, max_distance_miles: float = 15.0):
     """
@@ -71,56 +82,60 @@ available_functions = {
     'analyze_specialty_gaps': analyze_specialty_gaps
 }
 
-class NetworkGapAgent:
+REACT_SYSTEM_PROMPT = """
+        You are a Network Adequacy Analyst for a healthcare payer.
+
+        You MUST strictly follow this format:
+
+        Thought: Your reasoning
+        Action: analyze_specialty_gaps[JSON arguments]
+        Observation: Tool result
+        Thought: Interpretation
+        Final Answer: Professional summary with recommendation
+
+        Rules:
+        - Always analyze before concluding
+        - Only use available actions
+        - Do not hallucinate data
+"""
+
+class ReActNetworkGapAgent:
     def __init__(self):
         self.model = "llama3.1"
-        self.system_prompt = """
-        You are a Network Adequacy Analyst for a healthcare payer.
-        Your goal is to protect member health by finding "Network Gaps"—areas where members cannot find a doctor nearby.
-
-        TOOLS:
-        - `analyze_specialty_gaps(specialty, max_distance_miles)`: Calculates coverage. Standard acceptable distance is 15 miles.
-
-        INSTRUCTIONS:
-        1. Receive the user's concern (e.g., "Check Cardiology coverage").
-        2. Call the tool to get the raw data.
-        3. INTERPRET the data:
-        - If `affected_member_count` > 0, declare a "Network Gap."
-        - Suggest a recruitment strategy (e.g., "We need to recruit Cardiologists in the Northern region").
-        4. Output a professional summary.
-        """
-
-    def run(self, user_query):
-        messages = [
-            {'role': 'system', 'content': self.system_prompt},
-            {'role': 'user', 'content': user_query}
+        self.messages = [
+            {"role": "system", "content": REACT_SYSTEM_PROMPT}
         ]
 
-        print(f"User: {user_query}")
+    def run(self, user_query):
+        self.messages.append({"role": "user", "content": user_query})
 
-        for _ in range(5):
+        while True:
             response = ollama.chat(
                 model=self.model,
-                messages=messages,
-                tools=[analyze_specialty_gaps]
+                messages=self.messages
             )
-            
-            msg = response['message']
-            messages.append(msg)
 
-            if msg.get('tool_calls'):
-                print(f"--> Agent is analyzing map data...")
-                for tool in msg['tool_calls']:
-                    fn_name = tool['function']['name']
-                    args = tool['function']['arguments']
+            output = response["message"]["content"]
+            print("\nLLM OUTPUT:\n", output)
 
-                    if fn_name in available_functions:
-                        result = available_functions[fn_name](**args)
-                        messages.append({'role': 'tool', 'content': str(result)})
+            # Stop condition
+            if "Final Answer:" in output:
+                break
+
+            # Parse Action
+            fn_name, args = parse_action(output)
+
+            if fn_name and fn_name in available_functions:
+                result = available_functions[fn_name](**args)
+
+                # Feed observation back to LLM
+                self.messages.append({
+                    "role": "user",
+                    "content": f"Observation: {result}"
+                })
             else:
-                print(f"\nAgent Final Report:\n{msg['content']}")
-                return
+                raise ValueError("Invalid or missing action")
 
 if __name__ == "__main__":
-    agent = NetworkGapAgent()
+    agent = ReActNetworkGapAgent()
     agent.run("Analyze the network for Cardiology gaps. Are our members covered?")
