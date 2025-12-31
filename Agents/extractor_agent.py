@@ -10,7 +10,10 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 
 # Schema
-from healthcare_schema import HealthcareProviderProfile
+try:
+    from healthcare_schema import HealthcareProviderProfile
+except ImportError:
+    from Agents.healthcare_schema import HealthcareProviderProfile
 
 load_dotenv()
 
@@ -25,7 +28,7 @@ class HealthcareExtractionModel:
         self.llm = ChatGoogleGenerativeAI(
             model="gemini-2.5-flash",
             temperature=0,
-            google_api_key=api_key or os.getenv("GOOGLE_API_KEY")
+            google_api_key=api_key or os.getenv("GEMINI_API_KEY")
         )
         self.parser = PydanticOutputParser(pydantic_object=HealthcareProviderProfile)
 

@@ -7,9 +7,11 @@ load_dotenv()
 
 # Use DATABASE_URL from .env, or default to a local postgres instance
 # Example: postgresql+asyncpg://user:password@localhost:5432/healthcare
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:postgres@localhost:5432/healthcare")
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-engine = create_async_engine(DATABASE_URL, echo=True)
+# Set echo=True to see all SQL queries (useful for debugging)
+# Set echo=False for cleaner terminal output in production
+engine = create_async_engine(DATABASE_URL, echo=False)
 
 AsyncSessionLocal = async_sessionmaker(
     bind=engine,

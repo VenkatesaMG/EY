@@ -89,7 +89,7 @@ available_functions = {
 
 class EnrichmentManager:
     def __init__(self):
-        self.model = "llama3.1"
+        self.model = "qwen2.5:7b"
         self.system_prompt = """
         You are the **Lead Forensic Data Enrichment Agent** for a major Insurance Firm. 
     Your mission is to construct a **"Golden Record"** profile for the requested Provider (Individual or Organization) by searching, scraping, and fusing information from the web.
@@ -159,6 +159,8 @@ class EnrichmentManager:
                 messages=messages,
                 tools=[search_web, scrape_webpage]
             )
+
+            print(response)
             
             msg = response['message']
             messages.append(msg)

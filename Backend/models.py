@@ -75,3 +75,19 @@ class Provider(Base):
 
     license_status: Mapped[str] = mapped_column(String, nullable=True)
     license_confidence: Mapped[float] = mapped_column(Float, nullable=True)
+
+class RawProviderSubmission(Base):
+    __tablename__ = "raw_provider_submissions"
+
+    submission_id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(String, nullable=False) # 'form', 'csv'
+    npi: Mapped[str] = mapped_column(String, nullable=True)
+    
+    input_payload: Mapped[dict] = mapped_column(JSON, nullable=True)
+    npi_api_response: Mapped[dict] = mapped_column(JSON, nullable=True)
+    
+    processing_status: Mapped[str] = mapped_column(String, default="pending")
+    error_message: Mapped[str] = mapped_column(Text, nullable=True)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

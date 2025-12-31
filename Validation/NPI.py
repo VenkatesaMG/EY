@@ -24,6 +24,8 @@ def lookup_npi(npi_number: str, pretty: bool = False) -> dict | None:
     except requests.RequestException as e:
         raise NpiLookupError(f"HTTP error calling NPPES: {e}") from e
 
+    print(f'response :{resp.json()} -------')
+
     data = resp.json()
 
     # NPPES wraps results in a 'results' array; empty if no match. [web:1][web:53]
@@ -84,14 +86,15 @@ if __name__ == "__main__":
     if result is None:
         print("No provider found for that NPI")
     else:
-        # print(f"NPI: {result['npi']}")
+        print(f"NPI: {result['npi']}")
+        print(result)
         # print(f"Name: {result['first_name']} {result['last_name']}")
         # print(f"Primary taxonomy: {result['primary_taxonomy']}")
         # print(f"Primary practice city/state: "
         #       f"{result['primary_practice_address']['city']}, "
         #       f"{result['primary_practice_address']['state']}")
 
-        print(result['primary_practice_address'])   # print the primary practice address
+        # print(result['primary_practice_address'])   # print the primary practice address
 
 # {'address_1': '14610 WINDSOR ST', 'address_2': None, 'city': 'LEAWOOD', 'state': 'KS', 
 # 'postal_code': '662243727', 'telephone_number': '913-706-6304', 'country_code': 'US'}

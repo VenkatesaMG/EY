@@ -3,9 +3,10 @@ import json
 import os
 from google import genai  # official Google Gen AI SDK
 from google.genai import types
+from dotenv import load_dotenv
 
 # Client picks up GEMINI_API_KEY / GOOGLE_API_KEY from env by default. [web:71]
-client = genai.Client(api_key="AIzaSyCERziyY95KhPgIyaGRFcpCLNe7_6AAGac")
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
 def compare_row_with_npi_gemini(row: dict, npi_info: dict) -> dict:
     """
@@ -48,33 +49,37 @@ def compare_row_with_npi_gemini(row: dict, npi_info: dict) -> dict:
                         "type": "object",
                         "properties": {
                             "match": {"type": "boolean"},
+                            "confidence": {"type": "number"},
                             "reason": {"type": "string"},
                         },
-                        "required": ["match", "reason"],
+                        "required": ["match", "confidence", "reason"],
                     },
                     "address": {
                         "type": "object",
                         "properties": {
                             "match": {"type": "boolean"},
+                            "confidence": {"type": "number"},
                             "reason": {"type": "string"},
                         },
-                        "required": ["match", "reason"],
+                        "required": ["match", "confidence", "reason"],
                     },
                     "phone": {
                         "type": "object",
                         "properties": {
                             "match": {"type": "boolean"},
+                            "confidence": {"type": "number"},
                             "reason": {"type": "string"},
                         },
-                        "required": ["match", "reason"],
+                        "required": ["match", "confidence", "reason"],
                     },
                     "specialty": {
                         "type": "object",
                         "properties": {
                             "match": {"type": "boolean"},
+                            "confidence": {"type": "number"},
                             "reason": {"type": "string"},
                         },
-                        "required": ["match", "reason"],
+                        "required": ["match", "confidence", "reason"],
                     },
                 },
                 "required": ["name", "address", "phone", "specialty"],
@@ -99,7 +104,7 @@ NPI RECORD (official registry subset):
 
 Tasks:
 1. Decide if this looks like the same provider and location.
-2. For each field (name, address, phone, specialty), say whether it matches and why.
+2. For each field (name, address, phone, specialty), say whether it matches, provide a confidence score (0.0-1.0), and why.
 3. Identify issues, e.g. "phone_mismatch", "address_mismatch", "name_mismatch", "specialty_mismatch".
 4. Give an overall confidence from 0 to 100.
 5. Return ONLY JSON matching the given schema. Do not include any extra keys.
