@@ -39,13 +39,22 @@ def cleanup_driver():
             pass
         _driver_instance = None
 
-def search_web(query: str):
+def search_web(query: str = None, **kwargs):
     """
     Search DuckDuckGo (HTML Version). 
-    Returns top 3 results with titles and specific URLs.
+    Returns top 5 results with titles and specific URLs.
     Args:
         query: The search string (e.g. 'Dr. Smith NPI registry')
     """
+    # --- FIX START: Handle LLM Argument Hallucinations ---
+    # The model sometimes passes 'url', 'q', or 'search_term' instead of 'query'
+    if query is None:
+        query = kwargs.get('url') or kwargs.get('q') or kwargs.get('topic')
+    
+    if not query:
+        return "Error: Model failed to provide a search query."
+    # --- FIX END ---
+
     driver = get_shared_driver()
     results_text = ""
     try:
@@ -53,7 +62,7 @@ def search_web(query: str):
         driver.get(f"https://html.duckduckgo.com/html/?q={query}")
         time.sleep(2)
         elements = driver.find_elements(By.CSS_SELECTOR, ".result")
-        print(elements)
+        # print(elements) # Optional: comment this out to reduce noise
         for i, el in enumerate(elements[:5]):
             try:
                 link_el = el.find_element(By.CSS_SELECTOR, "a.result__a")
@@ -122,7 +131,6 @@ class EnrichmentManager:
     3.  **Ambiguity Handling (The Golden Rule)**:
         * If the scraped text provides **multiple distinct practice locations or phone numbers**, list all of them in a structured way within your final JSON. Do **NOT** choose one arbitrarily. *The organization may have multiple practice sites.*
     4.  **Final Consolidation**: After all searching is complete, merge **all verified data** into the final JSON structure. Unfound data points should be returned as `null`.
-
     ---
 
     **Use the following format:**
@@ -196,14 +204,15 @@ if __name__ == "__main__":
         "state": "Missouri (MO)",
         "npi": "1891106191",
         "phone" : None,
-        "email" : None
+        "email" : None,
+        "taxonomy_code": None
     }
 
     try:
         print("--- Starting Deep Enrichment (Native Llama Mode) ---")
         final_response = manager.enrich_profile(
             partial_profile=incomplete_profile, 
-            missing_keys=["phone", "practice_address", "fax"]
+            missing_keys=["phone", "email", "taxonomy_code"]
         )
         print("\n--- FINAL ENRICHED PROFILE ---")
         print(final_response)

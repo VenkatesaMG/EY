@@ -76,8 +76,6 @@ def lookup_npi(npi_number: str, pretty: bool = False) -> dict | None:
 
     return normalized
 
-
-
 if __name__ == "__main__":
     test_npi = "1891106191"  # replace with a real NPI for local testing
     result = lookup_npi(test_npi)
