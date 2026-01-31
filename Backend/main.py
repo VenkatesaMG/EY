@@ -11,12 +11,13 @@ from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException, Bod
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
+from sqlalchemy.orm import selectinload
 import csv
 import io
 import codecs
 
 from database import get_db, init_db
-from models import Provider, RawProviderSubmission
+from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission
 from Agents.extractor_agent import HealthcareExtractionModel
 from services import ValidationService
 import logging
@@ -133,32 +134,30 @@ async def get_submission_status(submission_id: int, db: AsyncSession = Depends(g
         raise HTTPException(status_code=404, detail="Submission not found")
         
     # Fetch associated Provider (if created/linked)
-    # We can link by NPI since that's unique enough for this flow, or add provider_id to submission table later.
     provider_data = None
     if submission.npi:
-        p_res = await db.execute(select(Provider).filter(Provider.npi == submission.npi))
+        # Load provider with meta and professional relation
+        stmt = select(ProviderPersonal).options(
+            selectinload(ProviderPersonal.meta),
+            selectinload(ProviderPersonal.professional)
+        ).filter(ProviderPersonal.npi == submission.npi)
+        
+        p_res = await db.execute(stmt)
         provider = p_res.scalars().first()
+        
         if provider:
+            # Flatten for UI consumption
             provider_data = {
-                "id": provider.provider_id,
-                "status": provider.status,
-                "overall_confidence": provider.overall_confidence,
-                "npi_status": provider.npi_status,
-                "name_status": provider.name_status,
-                "address_status": provider.address_status
+                "id": provider.npi, # Use NPI as ID
+                "status": provider.meta.status if provider.meta else "needs_review",
+                "overall_confidence": provider.meta.overall_confidence if provider.meta else 0,
+                "npi_status": provider.meta.npi_status if provider.meta else "PENDING",
+                "name_status": provider.meta.name_status if provider.meta else "PENDING",
+                "address_status": provider.meta.address_status if provider.meta else "PENDING"
             }
 
     # Compute step statuses based on processing_status
     status = submission.processing_status
-    
-    # Step status logic:
-    # - queued: just submitted, nothing started
-    # - npi_lookup: NPI lookup in progress
-    # - validating: AI validation in progress  
-    # - enriching: enrichment in progress
-    # - processed: completed without enrichment
-    # - enriched: completed with enrichment
-    # - failed*: various failure states
     
     def get_step_status(step_name):
         if step_name == "submitted":
@@ -194,7 +193,6 @@ async def get_submission_status(submission_id: int, db: AsyncSession = Depends(g
             elif status == "enriched":
                 return "completed"
             elif status == "processed":
-                # Processed without enrichment - mark as completed (skipped)
                 return "completed"
             else:
                 return "pending"
@@ -219,7 +217,6 @@ async def get_submission_status(submission_id: int, db: AsyncSession = Depends(g
 async def onboard_csv_upload(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
     """
     Batch processing for CSV.
-    Expected CSV columns: npi, first_name, last_name, address, city, state, zip_code, etc.
     """
     try:
         csv_file = io.TextIOWrapper(file.file, encoding="utf-8")
@@ -228,7 +225,6 @@ async def onboard_csv_upload(file: UploadFile = File(...), db: AsyncSession = De
         submissions_created = []
         
         for row in reader:
-            # Clean inputs
             npi_val = row.get("npi") or row.get("National Provider Identifier")
             if npi_val:
                 npi_val = npi_val.strip()
@@ -244,8 +240,6 @@ async def onboard_csv_upload(file: UploadFile = File(...), db: AsyncSession = De
         
         await db.commit()
         
-        # Process batch (sequentially for now to avoid overloading free tier usage if any)
-        # In prod this would be background tasks
         processed_count = 0
         for sub in submissions_created:
             await db.refresh(sub)
@@ -261,36 +255,97 @@ async def onboard_csv_upload(file: UploadFile = File(...), db: AsyncSession = De
 
 @app.get("/providers")
 async def list_providers(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Provider).offset(skip).limit(limit).order_by(Provider.created_at.desc()))
+    stmt = select(ProviderPersonal).options(
+        selectinload(ProviderPersonal.meta),
+        selectinload(ProviderPersonal.professional)
+    ).limit(limit).offset(skip)
+    
+    result = await db.execute(stmt)
     providers = result.scalars().all()
-    # Convert to dict for proper JSON serialization
-    return [{
-        "provider_id": p.provider_id,
+    
+    output = []
+    for p in providers:
+        # Join data safely
+        prof = p.professional or ProviderProfessional()
+        meta = p.meta or ProviderMeta()
+        
+        output.append({
+            "provider_id": p.npi, # Using NPI as primary ID
+            "npi": p.npi,
+            "display_name": p.display_name,
+            "first_name": p.first_name,
+            "last_name": p.last_name,
+            "practice_name": prof.practice_name,
+            "email": p.email,
+            "phone": p.phone,
+            "address_line1": p.address_line1 or prof.address_line1,
+            "city": p.city or prof.city,
+            "state": p.state or prof.state,
+            "postal_code": p.postal_code or prof.postal_code,
+            "specialties": prof.specialties or ([prof.taxonomy_code] if prof.taxonomy_code else []),
+            "overall_confidence": meta.overall_confidence,
+            "status": meta.status,
+            "npi_status": meta.npi_status,
+            "created_at": meta.created_at.isoformat() if meta.created_at else None
+        })
+    return output
+
+@app.get("/providers/{provider_id}")
+async def get_provider(provider_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Get provider by NPI (or ID).
+    """
+    stmt = select(ProviderPersonal).options(
+        selectinload(ProviderPersonal.meta),
+        selectinload(ProviderPersonal.professional)
+    ).filter(ProviderPersonal.npi == provider_id)
+    
+    result = await db.execute(stmt)
+    p = result.scalars().first()
+    
+    if not p:
+        raise HTTPException(status_code=404, detail="Provider not found")
+        
+    prof = p.professional or ProviderProfessional()
+    meta = p.meta or ProviderMeta()
+    
+    # Return flattened
+    return {
+        "provider_id": p.npi,
         "npi": p.npi,
         "display_name": p.display_name,
         "first_name": p.first_name,
         "last_name": p.last_name,
-        "practice_name": p.practice_name,
+        "practice_name": prof.practice_name,
         "email": p.email,
         "phone": p.phone,
-        "address_line1": p.address_line1,
-        "city": p.city,
-        "state": p.state,
-        "postal_code": p.postal_code,
-        "specialties": p.specialties,
-        "overall_confidence": p.overall_confidence,
-        "status": p.status,
-        "npi_status": p.npi_status,
-        "created_at": p.created_at.isoformat() if p.created_at else None
-    } for p in providers]
-
-@app.get("/providers/{provider_id}")
-async def get_provider(provider_id: int, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Provider).filter(Provider.provider_id == provider_id))
-    provider = result.scalars().first()
-    if not provider:
-        raise HTTPException(status_code=404, detail="Provider not found")
-    return provider
+        "website": prof.website,
+        "address_line1": p.address_line1 or prof.address_line1,
+        "city": p.city or prof.city,
+        "state": p.state or prof.state,
+        "postal_code": p.postal_code or prof.postal_code,
+        "country": p.country,
+        "taxonomies": prof.taxonomies,
+        "taxonomy_code": prof.taxonomy_code,
+        "specialties": prof.specialties,
+        "accepting_new_patients": prof.accepting_new_patients,
+        "telehealth": prof.telehealth,
+        # Meta
+        "status": meta.status,
+        "overall_confidence": meta.overall_confidence,
+        "npi_status": meta.npi_status,
+        "npi_confidence": meta.npi_confidence,
+        "name_status": meta.name_status,
+        "name_confidence": meta.name_confidence,
+        "practice_status": meta.practice_status,
+        "practice_confidence": meta.practice_confidence,
+        "address_status": meta.address_status,
+        "address_confidence": meta.address_confidence,
+        "taxonomy_status": meta.taxonomy_status,
+        "taxonomy_confidence": meta.taxonomy_confidence,
+        "last_verified": meta.last_verified,
+        "raw_json": meta.raw_data_json
+    }
 
 @app.post("/providers/seed-mock-data")
 async def seed_mock_data(db: AsyncSession = Depends(get_db)):
@@ -321,14 +376,47 @@ async def seed_mock_data(db: AsyncSession = Depends(get_db)):
         ]
         
         created_count = 0
-        for provider_data in mock_providers:
-            # Check if provider already exists
-            existing = await db.execute(select(Provider).filter(Provider.npi == provider_data["npi"]))
+        for p_data in mock_providers:
+            npi = p_data.get("npi")
+            existing = await db.execute(select(ProviderPersonal).filter(ProviderPersonal.npi == npi))
             if existing.scalars().first():
                 continue
             
-            provider = Provider(**provider_data)
-            db.add(provider)
+            # Create Personal
+            personal = ProviderPersonal(
+                npi=npi,
+                first_name=p_data.get("first_name"),
+                last_name=p_data.get("last_name"),
+                display_name=p_data.get("display_name"),
+                phone=None, # Mock data didn't have phone
+                email=p_data.get("email"),
+                address_line1=p_data.get("address_line1"),
+                city=p_data.get("city"),
+                state=p_data.get("state"),
+                postal_code=p_data.get("postal_code"),
+                country=p_data.get("country")
+            )
+            
+            # Create Professional
+            prof = ProviderProfessional(
+                npi=npi,
+                practice_name=p_data.get("practice_name"),
+                address_line1=p_data.get("address_line1"), # Duplicate for integrity
+                city=p_data.get("city"),
+                specialties=p_data.get("specialties")
+            )
+            
+            # Create Meta
+            meta = ProviderMeta(
+                npi=npi,
+                status=p_data.get("status"),
+                overall_confidence=p_data.get("overall_confidence"),
+                npi_status=p_data.get("npi_status")
+            )
+            
+            db.add(personal)
+            db.add(prof)
+            db.add(meta)
             created_count += 1
         
         await db.commit()
@@ -345,23 +433,21 @@ async def seed_mock_data(db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=500, detail=f"Seeding failed: {str(e)}")
 
 @app.post("/providers/{provider_id}/verify-email")
-async def verify_provider_email(provider_id: int, db: AsyncSession = Depends(get_db)):
+async def verify_provider_email(provider_id: str, db: AsyncSession = Depends(get_db)):
     """
     Trigger email verification for a provider.
     """
     try:
-        result = await db.execute(select(Provider).filter(Provider.provider_id == provider_id))
+        # Assuming provider_id is NPI for consistency
+        result = await db.execute(select(ProviderPersonal).filter(ProviderPersonal.npi == provider_id))
         provider = result.scalars().first()
         
         if not provider:
+            # Fallback: try searching by ID if it was an int (though we use string arg)
+            # This is complex in new schema. We stick to NPI.
             raise HTTPException(status_code=404, detail="Provider not found")
         
-        # Simulate email verification process
-        # In production, this would send an actual verification email
-        logger.info(f"📧 Email verification triggered for Provider #{provider_id} | NPI: {provider.npi}")
-        
-        # Update provider status (simulated)
-        # In production, you'd send email and wait for verification
+        logger.info(f"📧 Email verification triggered for Provider {provider.display_name} | NPI: {provider.npi}")
         
         return {
             "success": True,
@@ -380,15 +466,14 @@ async def analyze_map_data(data: dict = Body(...)):
     """
     Analyze geographic distribution data using Gemini AI.
     """
+    # ... existing implementation kept same ...
     try:
         import json
         import os
         from google import genai
         
-        # Initialize Gemini client
         gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
         
-        # Prepare prompt for analysis
         prompt = f"""
 You are a healthcare data analyst. Analyze the following geographic distribution data of healthcare provider submissions across US states.
 
@@ -413,25 +498,20 @@ Please provide a comprehensive analysis that includes:
 Format your response in clear, readable paragraphs suitable for display in a UI.
 """
         
-        # Call Gemini API
         response = gemini_client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash",
             contents=prompt,
             config={
                 "temperature": 0.7,
             }
         )
         
-        # Extract text from response - handle different response formats
         try:
-            # Try direct text access
             analysis_text = response.text
         except AttributeError:
             try:
-                # Try parsed response
                 if hasattr(response, 'parsed'):
                     analysis_text = str(response.parsed)
-                # Try candidates structure
                 elif hasattr(response, 'candidates') and response.candidates:
                     analysis_text = response.candidates[0].content.parts[0].text
                 else:
@@ -450,4 +530,3 @@ Format your response in clear, readable paragraphs suitable for display in a UI.
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
-

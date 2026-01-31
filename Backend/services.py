@@ -1,7 +1,8 @@
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from models import Provider, RawProviderSubmission
+from sqlalchemy.orm import selectinload
+from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission
 from Validation.NPI import lookup_npi
 from Validation.gemini_compare import compare_row_with_npi_gemini
 from Agents.enrichment_agent_v0 import EnrichmentManager
@@ -18,7 +19,7 @@ class ValidationService:
         Process a raw submission:
         1. Access NPI API (if not already done).
         2. Validate/Compare using Gemini.
-        3. Upsert to Golden Record if confidence is sufficient.
+        3. Upsert to Golden Record tables if confidence is sufficient.
         """
         logger.info(f"📥 Processing Submission #{submission.submission_id} | NPI: {submission.npi}")
         
@@ -77,75 +78,108 @@ class ValidationService:
             
             logger.info(f"🤖 AI Validation: Confidence={overall_confidence}% | Match={overall_match}")
             
-            # Logic: If confidence > 80, we consider it GOLDEN (or provisionally golden).
-            # If less, we might still save it but mark as 'needs_review' or triggers enrichment.
-            
             status = "verified" if (overall_match and overall_confidence >= 80) else "needs_review"
             
-            # 3. Upsert to Golden Record Provider Table
-            # STRATEGY: Update Master Table with NPI Registry Data (The Source of Truth)
+            # 3. Upsert to Golden Record Provider Tables
             
-            existing_q = await db.execute(select(Provider).filter(Provider.npi == npi_val))
-            provider = existing_q.scalars().first()
+            # Fetch existing provider with all relations
+            stmt = select(ProviderPersonal).options(
+                selectinload(ProviderPersonal.professional),
+                selectinload(ProviderPersonal.meta)
+            ).filter(ProviderPersonal.npi == npi_val)
             
+            result = await db.execute(stmt)
+            provider = result.scalars().first()
+            
+            # Create if not exists
             if not provider:
-                provider = Provider(npi=npi_val)
+                provider = ProviderPersonal(npi=npi_val)
                 db.add(provider)
+                
+                # Must flush to ensure existence before creating related records if strictly enforced FKs in separate transactions (but here same transaction is fine)
+                # We will create the children objects
+                prof = ProviderProfessional(npi=npi_val)
+                meta = ProviderMeta(npi=npi_val)
+                
+                # Link them (SQLAlchemy should handle FK assignment via relationship, but explicit is safer for insert)
+                provider.professional = prof
+                provider.meta = meta
+                
+                db.add(prof)
+                db.add(meta)
+            else:
+                # Ensure relations exist (in case of partial data corruption)
+                if not provider.professional:
+                    provider.professional = ProviderProfessional(npi=npi_val)
+                if not provider.meta:
+                    provider.meta = ProviderMeta(npi=npi_val)
             
-            # Map NPI Registry Data (Golden Source)
+            # --- Map Data to Normalized Tables ---
+            
+            # 1. Personal Info
             provider.first_name = npi_info.get("first_name")
             provider.last_name = npi_info.get("last_name")
             
-            # Org Name if applicable logic (NPI basic has organization_name sometimes)
             if npi_info.get("enumeration_type") == "NPI-2": # Organization
-                provider.practice_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name")
-                provider.display_name = provider.practice_name
+                org_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name")
+                provider.display_name = org_name
+                provider.professional.practice_name = org_name
             else:
                 provider.display_name = f"{provider.first_name} {provider.last_name}".strip()
 
-            # Taxonomy
-            if npi_info.get("primary_taxonomy"):
-                provider.taxonomy_code = npi_info.get("primary_taxonomy", {}).get("code")
-                # provider.specialties = [npi_info.get("primary_taxonomy", {}).get("desc")] # If we had desc
-            
-            # Address from NPI
+            # Contact & Address (Use NPI address as primary)
             npi_addr = npi_info.get("primary_practice_address", {})
+            
+            # Personal Contact Info (from NPI or User Input)
+            provider.phone = npi_addr.get("telephone_number") or data.get("phone")
+            provider.email = data.get("primary_email")
+            
+            # Personal Address
             provider.address_line1 = npi_addr.get("address_1")
             provider.city = npi_addr.get("city")
             provider.state = npi_addr.get("state")
             provider.postal_code = npi_addr.get("postal_code")
+            provider.country = npi_addr.get("country_code", "US")
+
+            # 2. Professional Info
+            # Also map address to professional (practice address)
+            provider.professional.address_line1 = npi_addr.get("address_1")
+            provider.professional.city = npi_addr.get("city")
+            provider.professional.state = npi_addr.get("state")
+            provider.professional.postal_code = npi_addr.get("postal_code")
+            provider.professional.country = npi_addr.get("country_code", "US")
             
-            # Phone from NPI (Fallback to user input if missing)
-            provider.phone = npi_addr.get("telephone_number") or data.get("phone")
+            provider.professional.website = data.get("website")
             
-            # Metadata from User Input (things NPI doesn't have)
-            provider.email = data.get("primary_email")
-            provider.website = data.get("website")
-            
-            # Save Raw Input for reference
-            provider.raw_data_json = data 
-            
-            provider.status = status
-            provider.overall_confidence = overall_confidence
-            provider.npi_status = "VALID"
-            provider.npi_confidence = 100.0
+            # Taxonomy
+            if npi_info.get("primary_taxonomy"):
+                provider.professional.taxonomy_code = npi_info.get("primary_taxonomy", {}).get("code")
+                # Store full taxonomies list as JSON
+                provider.professional.taxonomies = npi_info.get("taxonomies", [])
+
+            # 3. Validation Meta
+            provider.meta.raw_data_json = data 
+            provider.meta.status = status
+            provider.meta.overall_confidence = overall_confidence
+            provider.meta.npi_status = "VALID"
+            provider.meta.npi_confidence = 100.0
             
             # Map detailed validation
             fields = comparison.get("fields", {})
             
             name_res = fields.get("name", {})
-            provider.name_status = "VERIFIED" if name_res.get("match") else "MISMATCH"
-            provider.name_confidence = name_res.get("confidence", 0.0)
+            provider.meta.name_status = "VERIFIED" if name_res.get("match") else "MISMATCH"
+            provider.meta.name_confidence = name_res.get("confidence", 0.0)
 
             addr_res = fields.get("address", {})
-            provider.address_status = "VERIFIED" if addr_res.get("match") else "MISMATCH"
-            provider.address_confidence = addr_res.get("confidence", 0.0)
+            provider.meta.address_status = "VERIFIED" if addr_res.get("match") else "MISMATCH"
+            provider.meta.address_confidence = addr_res.get("confidence", 0.0)
             
             spec_res = fields.get("specialty", {})
-            provider.taxonomy_status = "VERIFIED" if spec_res.get("match") else "MISMATCH"
-            provider.taxonomy_confidence = spec_res.get("confidence", 0.0)
+            provider.meta.taxonomy_status = "VERIFIED" if spec_res.get("match") else "MISMATCH"
+            provider.meta.taxonomy_confidence = spec_res.get("confidence", 0.0)
             
-            provider.last_verified = datetime.utcnow()
+            provider.meta.last_verified = datetime.utcnow()
             
             submission.processing_status = "processed"
             
@@ -169,18 +203,23 @@ class ValidationService:
 
 class EnrichmentService:
     @staticmethod
-    async def enrich_provider(provider: Provider, submission: RawProviderSubmission, db: AsyncSession):
+    async def enrich_provider(provider: ProviderPersonal, submission: RawProviderSubmission, db: AsyncSession):
         """
         Scrapes web to find missing fields for the provider.
-        Uses enrichment_agent_v0 which uses Selenium + Ollama.
         """
+        # Ensure relations are loaded if passed from elsewhere
+        # (In process_submission they are loaded, but let's be safe if possible, though async attributes are tricky)
+        # We assume they are loaded.
+        
         logger.info(f"🔍 Enriching Provider: {provider.display_name} (NPI: {provider.npi})")
         
         # Identify missing critical fields
         missing_keys = []
         if not provider.phone: missing_keys.append("phone")
-        if not provider.address_line1: missing_keys.append("practice_address")
-        if not provider.website: missing_keys.append("website")
+        
+        # Check professional address
+        if not provider.professional.address_line1: missing_keys.append("practice_address")
+        if not provider.professional.website: missing_keys.append("website")
         
         if not missing_keys:
             logger.info("✅ No missing fields. Skipping enrichment.")
@@ -192,7 +231,7 @@ class EnrichmentService:
         partial_profile = {
             "first_name": provider.first_name,
             "last_name": provider.last_name,
-            "credential": provider.taxonomy_code, # approx
+            "credential": provider.professional.taxonomy_code, 
             "city": provider.city,
             "state": provider.state,
             "npi": provider.npi
@@ -200,13 +239,11 @@ class EnrichmentService:
 
         try:
             manager = EnrichmentManager()
-            # enrichment_agent_v0 only takes partial_profile
             result = manager.enrich_profile(partial_profile)
             
             # Parse result if string
             if isinstance(result, str):
                 try: 
-                    # Attempt to extract JSON from markdown block if present
                     if "```json" in result:
                         import re
                         match = re.search(r"```json\s*(\{.*?\})\s*```", result, re.DOTALL)
@@ -222,26 +259,34 @@ class EnrichmentService:
 
             # Update provider with found data
             if isinstance(result, dict):
+                updated = False
                 if result.get("phone") and not provider.phone:
                     provider.phone = result.get("phone")
+                    updated = True
                 
-                if result.get("website") and not provider.website:
-                    provider.website = result.get("website")
+                if result.get("website") and not provider.professional.website:
+                    provider.professional.website = result.get("website")
+                    updated = True
                 
-                if result.get("practice_address") and not provider.address_line1:
-                    provider.address_line1 = result.get("practice_address")
+                if result.get("practice_address") and not provider.professional.address_line1:
+                    provider.professional.address_line1 = result.get("practice_address")
+                    updated = True
                 
-                # Also check for address fields in the v0 format
-                if result.get("address_line1") and not provider.address_line1:
-                    provider.address_line1 = result.get("address_line1")
+                if result.get("address_line1") and not provider.professional.address_line1:
+                     provider.professional.address_line1 = result.get("address_line1")
+                     updated = True
                 
-                provider.status = "enriched"
-                submission.processing_status = "enriched"
-                logger.info("✅ Enrichment Complete")
+                if updated:
+                    provider.meta.status = "enriched"
+                    submission.processing_status = "enriched"
+                    logger.info("✅ Enrichment Complete")
+                else:
+                    submission.processing_status = "processed"
+                    logger.info("✅ Enrichment Complete (No new data)")
+                    
                 await db.commit()
 
         except Exception as e:
             logger.error(f"❌ Enrichment Error: {e}")
-            submission.processing_status = "processed"  # Still mark as processed even if enrichment fails
+            submission.processing_status = "processed"  
             await db.commit()
-
