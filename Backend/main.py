@@ -16,7 +16,7 @@ import io
 import codecs
 
 from database import get_db, init_db
-from models import Provider, RawProviderSubmission
+from models import Provider_Personal, Provider_Professional, Provider_Meta, RawProviderSubmission
 from Agents.extractor_agent import HealthcareExtractionModel
 from services import ValidationService
 import logging
@@ -106,7 +106,7 @@ async def submit_provider(
         
         # Trigger validation in BACKGROUND
         # This allows immediate response to UI so it can start polling/visualizing
-        background_tasks.add_task(ValidationService.process_submission, submission, db)
+        background_tasks.add_task(ValidationService.process_submission, submission.submission_id)
         
         return {
             "message": "Submission queued", 

@@ -18,6 +18,7 @@ class Provider_Personal(Base):
     # Granular components for validation (mapped to display_name parts usually)
     first_name: Mapped[str] = mapped_column(String, nullable=True) 
     last_name: Mapped[str] = mapped_column(String, nullable=True)
+    sex: Mapped[str] = mapped_column(String, nullable=True)
     
     # Contact Info
     phone: Mapped[str] = mapped_column(String, nullable=True)
@@ -33,7 +34,7 @@ class Provider_Personal(Base):
 class Provider_Professional(Base):
     __tablename__ = "providers_master_prof"
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
 
     # Foreign Key
     npi: Mapped[str] = mapped_column(String, ForeignKey("providers_master_per.npi"), nullable=False)
@@ -55,7 +56,7 @@ class Provider_Professional(Base):
     country: Mapped[str] = mapped_column(String, nullable=True)
 
     # Professional Details
-    taxonomies: Mapped[list[dict]] = mapped_column(list[dict], nullable=True)
+    taxonomies: Mapped[list[dict]] = mapped_column(JSON, nullable=True)
     # taxonomy_code: Mapped[str] = mapped_column(String, nullable=True)
     # specialties: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
     # license_number: Mapped[str] = mapped_column(String, nullable=True) # From original request
@@ -66,7 +67,7 @@ class Provider_Professional(Base):
 class Provider_Meta(Base):
     __tablename__ = "providers_master_meta"
 
-    id: Mapped[int] = mapped_column(int, autoincrement=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     npi: Mapped[String] = mapped_column(String, ForeignKey("providers_master_per.npi"), nullable=False)
 
     # --- VALIDATION METADATA (Per Attribute) ---

@@ -1,175 +1,183 @@
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from models import Provider, RawProviderSubmission
+from models import Provider_Personal, Provider_Professional, Provider_Meta, RawProviderSubmission
 from Validation.NPI import lookup_npi
 from Validation.gemini_compare import compare_row_with_npi_gemini
 from Agents.enrichment_agent_v0 import EnrichmentManager
 import json
 import logging
+from fastapi import Depends
+from database import get_db, AsyncSessionLocal
 
 # Setup logger
 logger = logging.getLogger("HealthValidator")
 
 class ValidationService:
     @staticmethod
-    async def process_submission(submission: RawProviderSubmission, db: AsyncSession):
-        """
-        Process a raw submission:
-        1. Access NPI API (if not already done).
-        2. Validate/Compare using Gemini.
-        3. Upsert to Golden Record if confidence is sufficient.
-        """
-        logger.info(f"📥 Processing Submission #{submission.submission_id} | NPI: {submission.npi}")
-        
-        data = submission.input_payload or {}
-        npi_val = submission.npi
-        
-        # 1. NPI Lookup
-        npi_info = None
-        if not npi_val:
-            submission.processing_status = "failed"
-            submission.error_message = "Missing NPI"
-            await db.commit()
-            return
-        
-        # Update status to show NPI lookup in progress
-        submission.processing_status = "npi_lookup"
-        await db.commit()
-        logger.info(f"🔍 Step 1: NPI Registry Lookup for {npi_val}")
-            
-        try:
-            npi_info = lookup_npi(npi_val)
-            submission.npi_api_response = npi_info
-            await db.commit()  # Save NPI response immediately
-            logger.info(f"✅ NPI Lookup Complete")
-        except Exception as e:
-            logger.error(f"❌ NPI Lookup Failed: {e}")
-            submission.processing_status = "failed"
-            submission.error_message = f"NPI API Error: {str(e)}"
-            await db.commit()
-            return # Retry later?
+    async def process_submission(submission_id: int):
+        async with AsyncSessionLocal() as db:
+            submission = await db.get(RawProviderSubmission, submission_id)
 
-        if not npi_info:
-            submission.processing_status = "rejected_invalid_npi"
-            submission.error_message = "NPI not found in registry"
-            await db.commit()
-            return
-        
-        # Update status to show AI validation in progress
-        submission.processing_status = "validating"
-        await db.commit()
-        logger.info(f"🤖 Step 2: AI Validation in progress...")
+            """
+            Process a raw submission:
+            1. Access NPI API (if not already done).
+            2. Validate/Compare using Gemini.
+            3. Upsert to Golden Record if confidence is sufficient.
+            """
 
-        # 2. Compare with Gemini
-        row_data = {
-            "name": f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or data.get("organization_name"),
-            "address": f"{data.get('locations', [{}])[0].get('street_address_1')}, {data.get('locations', [{}])[0].get('city')}",
-            "phone": data.get("phone"),
-            "specialty": data.get("specialties", [""])[0] if data.get("specialties") else "",
-        }
-
-        try:
-            comparison = compare_row_with_npi_gemini(row_data, npi_info)
+            logger.info(f"📥 Processing Submission #{submission.submission_id} | NPI: {submission.npi}")
             
-            overall_confidence = comparison.get("confidence", 0.0)
-            overall_match = comparison.get("overall_match", False)
+            data = submission.input_payload or {}
+            npi_val = submission.npi
             
-            logger.info(f"🤖 AI Validation: Confidence={overall_confidence}% | Match={overall_match}")
-            
-            # Logic: If confidence > 80, we consider it GOLDEN (or provisionally golden).
-            # If less, we might still save it but mark as 'needs_review' or triggers enrichment.
-            
-            status = "verified" if (overall_match and overall_confidence >= 80) else "needs_review"
-            
-            # 3. Upsert to Golden Record Provider Table
-            # STRATEGY: Update Master Table with NPI Registry Data (The Source of Truth)
-            
-            existing_q = await db.execute(select(Provider).filter(Provider.npi == npi_val))
-            provider = existing_q.scalars().first()
-            
-            if not provider:
-                provider = Provider(npi=npi_val)
-                db.add(provider)
-            
-            # Map NPI Registry Data (Golden Source)
-            provider.first_name = npi_info.get("first_name")
-            provider.last_name = npi_info.get("last_name")
-            
-            # Org Name if applicable logic (NPI basic has organization_name sometimes)
-            if npi_info.get("enumeration_type") == "NPI-2": # Organization
-                provider.practice_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name")
-                provider.display_name = provider.practice_name
-            else:
-                provider.display_name = f"{provider.first_name} {provider.last_name}".strip()
-
-            # Taxonomy
-            if npi_info.get("primary_taxonomy"):
-                provider.taxonomy_code = npi_info.get("primary_taxonomy", {}).get("code")
-                # provider.specialties = [npi_info.get("primary_taxonomy", {}).get("desc")] # If we had desc
-            
-            # Address from NPI
-            npi_addr = npi_info.get("primary_practice_address", {})
-            provider.address_line1 = npi_addr.get("address_1")
-            provider.city = npi_addr.get("city")
-            provider.state = npi_addr.get("state")
-            provider.postal_code = npi_addr.get("postal_code")
-            
-            # Phone from NPI (Fallback to user input if missing)
-            provider.phone = npi_addr.get("telephone_number") or data.get("phone")
-            
-            # Metadata from User Input (things NPI doesn't have)
-            provider.email = data.get("primary_email")
-            provider.website = data.get("website")
-            
-            # Save Raw Input for reference
-            provider.raw_data_json = data 
-            
-            provider.status = status
-            provider.overall_confidence = overall_confidence
-            provider.npi_status = "VALID"
-            provider.npi_confidence = 100.0
-            
-            # Map detailed validation
-            fields = comparison.get("fields", {})
-            
-            name_res = fields.get("name", {})
-            provider.name_status = "VERIFIED" if name_res.get("match") else "MISMATCH"
-            provider.name_confidence = name_res.get("confidence", 0.0)
-
-            addr_res = fields.get("address", {})
-            provider.address_status = "VERIFIED" if addr_res.get("match") else "MISMATCH"
-            provider.address_confidence = addr_res.get("confidence", 0.0)
-            
-            spec_res = fields.get("specialty", {})
-            provider.taxonomy_status = "VERIFIED" if spec_res.get("match") else "MISMATCH"
-            provider.taxonomy_confidence = spec_res.get("confidence", 0.0)
-            
-            provider.last_verified = datetime.utcnow()
-            
-            submission.processing_status = "processed"
-            
-            await db.commit()
-            
-            # Trigger Enrichment if confidence is low
-            if status == "needs_review":
-                logger.warning(f"⚠️  Confidence {overall_confidence}% < 80% → Triggering Enrichment Agent")
-                # Update status to enriching
-                submission.processing_status = "enriching"
+            # 1. NPI Lookup
+            npi_info = None
+            if not npi_val:
+                submission.processing_status = "failed"
+                submission.error_message = "Missing NPI"
                 await db.commit()
-                logger.info(f"🌐 Step 3: Web Enrichment in progress...")
-                await EnrichmentService.enrich_provider(provider, submission, db)
+                return
             
-        except Exception as e:
-            logger.error(f"❌ Validation Error: {e}")
-            submission.processing_status = "failed_validation"
-            submission.error_message = str(e)
+            # Update status to show NPI lookup in progress
+            submission.processing_status = "npi_lookup"
             await db.commit()
+            logger.info(f"🔍 Step 1: NPI Registry Lookup for {npi_val}")
+                
+            try:
+                npi_info = lookup_npi(npi_val)
+                submission.npi_api_response = npi_info
+                await db.commit()  # Save NPI response immediately
+                logger.info(f"✅ NPI Lookup Complete")
+            except Exception as e:
+                logger.error(f"❌ NPI Lookup Failed: {e}")
+                submission.processing_status = "failed"
+                submission.error_message = f"NPI API Error: {str(e)}"
+                await db.commit()
+                return # Retry later?
+
+            if not npi_info:
+                submission.processing_status = "rejected_invalid_npi"
+                submission.error_message = "NPI not found in registry"
+                await db.commit()
+                return
+            
+            # Update status to show AI validation in progress
+            submission.processing_status = "validating"
+            await db.commit()
+            logger.info(f"🤖 Step 2: AI Validation in progress...")
+
+            # Filling the Details
+            print(npi_info)
+            # 2. Compare with Gemini
+            row_data = {
+                "name": f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or data.get("organization_name"),
+                "address": f"{data.get('locations', [{}])[0].get('street_address_1')}, {data.get('locations', [{}])[0].get('city')}",
+                "phone": data.get("phone"),
+                "specialty": data.get("specialties", [""])[0] if data.get("specialties") else "",
+            }
+
+            try:
+                comparison = compare_row_with_npi_gemini(row_data, npi_info)
+                
+                overall_confidence = comparison.get("confidence", 0.0)
+                overall_match = comparison.get("overall_match", False)
+                
+                logger.info(f"🤖 AI Validation: Confidence={overall_confidence}% | Match={overall_match}")
+                
+                # Logic: If confidence > 80, we consider it GOLDEN (or provisionally golden).
+                # If less, we might still save it but mark as 'needs_review' or triggers enrichment.
+                
+                status = "verified" if (overall_match and overall_confidence >= 80) else "needs_review"
+                
+                # 3. Upsert to Golden Record Provider Table
+                # STRATEGY: Update Master Table with NPI Registry Data (The Source of Truth)
+                
+                existing_q = await db.execute(select(Provider_Personal).filter(Provider_Personal.npi == npi_val))
+                provider = existing_q.scalars().first()
+                
+                if not provider:
+                    provider = Provider_Personal(npi=npi_val)
+                    db.add(provider)
+                
+                # Map NPI Registry Data (Golden Source)
+                provider.first_name = npi_info.get("first_name")
+                provider.last_name = npi_info.get("last_name")
+                
+                # Org Name if applicable logic (NPI basic has organization_name sometimes)
+                if npi_info.get("enumeration_type") == "NPI-2": # Organization
+                    provider.practice_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name")
+                    provider.display_name = provider.practice_name
+                else:
+                    provider.display_name = f"{provider.first_name} {provider.last_name}".strip()
+
+                # Taxonomy
+                if npi_info.get("primary_taxonomy"):
+                    provider.taxonomy_code = npi_info.get("primary_taxonomy", {}).get("code")
+                    # provider.specialties = [npi_info.get("primary_taxonomy", {}).get("desc")] # If we had desc
+                
+                # Address from NPI
+                npi_addr = npi_info.get("primary_practice_address", {})
+                provider.address_line1 = npi_addr.get("address_1")
+                provider.city = npi_addr.get("city")
+                provider.state = npi_addr.get("state")
+                provider.postal_code = npi_addr.get("postal_code")
+                
+                # Phone from NPI (Fallback to user input if missing)
+                provider.phone = npi_addr.get("telephone_number") or data.get("phone")
+                
+                # Metadata from User Input (things NPI doesn't have)
+                provider.email = data.get("primary_email")
+                provider.website = data.get("website")
+                
+                # Save Raw Input for reference
+                provider.raw_data_json = data 
+                
+                provider.status = status
+                provider.overall_confidence = overall_confidence
+                provider.npi_status = "VALID"
+                provider.npi_confidence = 100.0
+                
+                # Map detailed validation
+                fields = comparison.get("fields", {})
+                
+                name_res = fields.get("name", {})
+                provider.name_status = "VERIFIED" if name_res.get("match") else "MISMATCH"
+                provider.name_confidence = name_res.get("confidence", 0.0)
+
+                addr_res = fields.get("address", {})
+                provider.address_status = "VERIFIED" if addr_res.get("match") else "MISMATCH"
+                provider.address_confidence = addr_res.get("confidence", 0.0)
+                
+                spec_res = fields.get("specialty", {})
+                provider.taxonomy_status = "VERIFIED" if spec_res.get("match") else "MISMATCH"
+                provider.taxonomy_confidence = spec_res.get("confidence", 0.0)
+                
+                provider.last_verified = datetime.utcnow()
+                
+                submission.processing_status = "processed"
+                
+                await db.commit()
+                
+                # Trigger Enrichment if confidence is low
+                if status == "needs_review":
+                    logger.warning(f"⚠️  Confidence {overall_confidence}% < 80% → Triggering Enrichment Agent")
+                    # Update status to enriching
+                    submission.processing_status = "enriching"
+                    await db.commit()
+                    logger.info(f"🌐 Step 3: Web Enrichment in progress...")
+                    await EnrichmentService.enrich_provider(provider, submission, db)
+                
+            except Exception as e:
+                logger.error(f"❌ Validation Error: {e}")
+                submission.processing_status = "failed_validation"
+                submission.error_message = str(e)
+                await db.commit()
 
 
 class EnrichmentService:
     @staticmethod
-    async def enrich_provider(provider: Provider, submission: RawProviderSubmission, db: AsyncSession):
+    async def enrich_provider(provider: Provider_Personal, submission: RawProviderSubmission, db: AsyncSession):
         """
         Scrapes web to find missing fields for the provider.
         Uses enrichment_agent_v0 which uses Selenium + Ollama.
