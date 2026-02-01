@@ -32,67 +32,20 @@ const fipsToAbbr = Object.fromEntries(
     Object.entries(stateAbbrToFIPS).map(([abbr, fips]) => [fips, abbr])
 );
 
-// Placeholder data for US states (using state abbreviations)
-const stateDataByAbbr = {
-    'AL': { name: 'Alabama', count: 245, providers: 1890 },
-    'AK': { name: 'Alaska', count: 32, providers: 156 },
-    'AZ': { name: 'Arizona', count: 512, providers: 3421 },
-    'AR': { name: 'Arkansas', count: 198, providers: 1234 },
-    'CA': { name: 'California', count: 3421, providers: 28456 },
-    'CO': { name: 'Colorado', count: 456, providers: 3124 },
-    'CT': { name: 'Connecticut', count: 234, providers: 1890 },
-    'DE': { name: 'Delaware', count: 67, providers: 456 },
-    'FL': { name: 'Florida', count: 1890, providers: 12345 },
-    'GA': { name: 'Georgia', count: 678, providers: 4567 },
-    'HI': { name: 'Hawaii', count: 89, providers: 567 },
-    'ID': { name: 'Idaho', count: 123, providers: 789 },
-    'IL': { name: 'Illinois', count: 890, providers: 6789 },
-    'IN': { name: 'Indiana', count: 456, providers: 3456 },
-    'IA': { name: 'Iowa', count: 234, providers: 1890 },
-    'KS': { name: 'Kansas', count: 234, providers: 1789 },
-    'KY': { name: 'Kentucky', count: 345, providers: 2345 },
-    'LA': { name: 'Louisiana', count: 456, providers: 3456 },
-    'ME': { name: 'Maine', count: 123, providers: 890 },
-    'MD': { name: 'Maryland', count: 456, providers: 3456 },
-    'MA': { name: 'Massachusetts', count: 567, providers: 4567 },
-    'MI': { name: 'Michigan', count: 789, providers: 5678 },
-    'MN': { name: 'Minnesota', count: 456, providers: 3456 },
-    'MS': { name: 'Mississippi', count: 234, providers: 1789 },
-    'MO': { name: 'Missouri', count: 567, providers: 4567 },
-    'MT': { name: 'Montana', count: 89, providers: 567 },
-    'NE': { name: 'Nebraska', count: 178, providers: 1234 },
-    'NV': { name: 'Nevada', count: 234, providers: 1789 },
-    'NH': { name: 'New Hampshire', count: 123, providers: 890 },
-    'NJ': { name: 'New Jersey', count: 678, providers: 5678 },
-    'NM': { name: 'New Mexico', count: 189, providers: 1234 },
-    'NY': { name: 'New York', count: 1234, providers: 9876 },
-    'NC': { name: 'North Carolina', count: 789, providers: 5678 },
-    'ND': { name: 'North Dakota', count: 67, providers: 456 },
-    'OH': { name: 'Ohio', count: 890, providers: 6789 },
-    'OK': { name: 'Oklahoma', count: 345, providers: 2345 },
-    'OR': { name: 'Oregon', count: 456, providers: 3456 },
-    'PA': { name: 'Pennsylvania', count: 987, providers: 7890 },
-    'RI': { name: 'Rhode Island', count: 89, providers: 567 },
-    'SC': { name: 'South Carolina', count: 345, providers: 2345 },
-    'SD': { name: 'South Dakota', count: 89, providers: 567 },
-    'TN': { name: 'Tennessee', count: 567, providers: 4567 },
-    'TX': { name: 'Texas', count: 2345, providers: 18901 },
-    'UT': { name: 'Utah', count: 234, providers: 1789 },
-    'VT': { name: 'Vermont', count: 67, providers: 456 },
-    'VA': { name: 'Virginia', count: 678, providers: 5678 },
-    'WA': { name: 'Washington', count: 567, providers: 4567 },
-    'WV': { name: 'West Virginia', count: 189, providers: 1234 },
-    'WI': { name: 'Wisconsin', count: 456, providers: 3456 },
-    'WY': { name: 'Wyoming', count: 45, providers: 234 },
+// Map Abbreviation to Full Name (for Tooltips)
+const stateNames = {
+    'AL': 'Alabama', 'AK': 'Alaska', 'AZ': 'Arizona', 'AR': 'Arkansas', 'CA': 'California',
+    'CO': 'Colorado', 'CT': 'Connecticut', 'DE': 'Delaware', 'FL': 'Florida', 'GA': 'Georgia',
+    'HI': 'Hawaii', 'ID': 'Idaho', 'IL': 'Illinois', 'IN': 'Indiana', 'IA': 'Iowa',
+    'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 'ME': 'Maine', 'MD': 'Maryland',
+    'MA': 'Massachusetts', 'MI': 'Michigan', 'MN': 'Minnesota', 'MS': 'Mississippi', 'MO': 'Missouri',
+    'MT': 'Montana', 'NE': 'Nebraska', 'NV': 'Nevada', 'NH': 'New Hampshire', 'NJ': 'New Jersey',
+    'NM': 'New Mexico', 'NY': 'New York', 'NC': 'North Carolina', 'ND': 'North Dakota', 'OH': 'Ohio',
+    'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania', 'RI': 'Rhode Island', 'SC': 'South Carolina',
+    'SD': 'South Dakota', 'TN': 'Tennessee', 'TX': 'Texas', 'UT': 'Utah', 'VT': 'Vermont',
+    'VA': 'Virginia', 'WA': 'Washington', 'WV': 'West Virginia', 'WI': 'Wisconsin', 'WY': 'Wyoming',
+    'DC': 'District of Columbia'
 };
-
-// Convert to FIPS-keyed data
-const stateDataByFIPS = Object.fromEntries(
-    Object.entries(stateDataByAbbr).map(([abbr, data]) => [
-        stateAbbrToFIPS[abbr],
-        data
-    ])
-);
 
 const USMapAnalysis = () => {
     const [hoveredFIPS, setHoveredFIPS] = useState(null);
@@ -101,14 +54,58 @@ const USMapAnalysis = () => {
     const [analysisResult, setAnalysisResult] = useState(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+    // Real Data State
+    const [stateStats, setStateStats] = useState({}); // { CA: { count: 10, providers: 50, name: "California" } }
+
+    // Fetch Real Data on Mount
+    React.useEffect(() => {
+        const fetchData = async () => {
+            try {
+                const res = await fetch('http://localhost:8000/analytics/geo-distribution');
+                const counts = await res.json(); // { "CA": 5, "TX": 2 }
+
+                // Merge with static metadata
+                const mergedData = {};
+                Object.keys(stateAbbrToFIPS).forEach(abbr => {
+                    const count = counts[abbr] || 0;
+                    mergedData[abbr] = {
+                        name: stateNames[abbr],
+                        count: count,
+                        providers: count * 1 // In real app, querying total providers vs submissions might differ
+                    };
+                });
+                setStateStats(mergedData);
+            } catch (e) {
+                console.error("Failed to fetch geo stats", e);
+            }
+        };
+        fetchData();
+
+        // Poll every 5 seconds to keep map live
+        const interval = setInterval(fetchData, 5000);
+        return () => clearInterval(interval);
+    }, []);
+
+    // Get data by FIPS
+    const getStateData = useCallback((fips) => {
+        const abbr = fipsToAbbr[fips];
+        if (!abbr) return null;
+        return stateStats[abbr];
+    }, [stateStats]);
+
     // Calculate color scale using d3-scale
     const colorScale = useMemo(() => {
-        const counts = Object.values(stateDataByFIPS).map(d => d.count);
+        const counts = Object.values(stateStats).map(d => d.count);
+        if (counts.length === 0) return () => "#e5e7eb";
+
         const minCount = Math.min(...counts);
         const maxCount = Math.max(...counts);
 
+        // If all zero, return lightest blue or gray
+        if (maxCount === 0) return () => "#f3f4f6";
+
         return scaleQuantize()
-            .domain([minCount, maxCount])
+            .domain([minCount, maxCount || 1]) // Avoid domain [0,0]
             .range([
                 "#dbeafe", // lightest blue
                 "#bfdbfe",
@@ -117,12 +114,7 @@ const USMapAnalysis = () => {
                 "#3b82f6", // medium blue
                 "#1d4ed8"  // darkest blue
             ]);
-    }, []);
-
-    // Get state data by FIPS
-    const getStateData = (fips) => {
-        return stateDataByFIPS[fips] || null;
-    };
+    }, [stateStats]);
 
     // Handle mouse move for tooltip positioning
     const handleMouseMove = useCallback((event) => {
@@ -139,79 +131,47 @@ const USMapAnalysis = () => {
         setIsAnalyzing(true);
         setAnalysisResult(null);
 
-        // Simulate loading delay
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        try {
+            // Prepare Real Data for Analysis
+            const activeStates = Object.entries(stateStats)
+                .filter(([_, data]) => data.count > 0)
+                .map(([abbr, data]) => ({
+                    state: data.name,
+                    abbr: abbr,
+                    submissions: data.count
+                }))
+                .sort((a, b) => b.submissions - a.submissions);
 
-        // Mock analysis suggestions for insurance company
-        const mockAnalysis = `STRATEGIC EXPANSION RECOMMENDATIONS
+            const summary = {
+                totalStates: activeStates.length,
+                totalSubmissions: activeStates.reduce((acc, curr) => acc + curr.submissions, 0),
+                totalProviders: activeStates.reduce((acc, curr) => acc + curr.submissions, 0), // Simulating 1:1 for now
+                topStates: activeStates.slice(0, 5)
+            };
 
-Based on the geographic distribution analysis of your provider network, here are key insights and recommendations:
+            // Call Gemini Analysis Endpoint
+            const res = await fetch('http://localhost:8000/analyze/map-data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    summary,
+                    states: activeStates
+                })
+            });
 
-📍 HIGH-PRIORITY EXPANSION OPPORTUNITIES
+            const result = await res.json();
+            if (result.success) {
+                setAnalysisResult(result.analysis);
+            } else {
+                setAnalysisResult("Analysis failed to generate insights.");
+            }
 
-1. TEXAS (TX) - Critical Gap Identified
-   • Current Coverage: Strong presence (2,345 submissions)
-   • Recommendation: Increase provider density in rural areas
-   • Focus Areas: West Texas, Panhandle region
-   • Department Priority: Primary Care and Emergency Medicine
-
-2. CALIFORNIA (CA) - Market Leadership Opportunity
-   • Current Coverage: Excellent (3,421 submissions)
-   • Recommendation: Expand specialty care networks
-   • Focus Areas: Central Valley, Inland Empire
-   • Department Priority: Cardiology, Oncology, Mental Health
-
-3. FLORIDA (FL) - Growing Market
-   • Current Coverage: Strong (1,890 submissions)
-   • Recommendation: Enhance geriatric care networks
-   • Focus Areas: Southwest Florida, Treasure Coast
-   • Department Priority: Geriatrics, Home Health Services
-
-⚠️ DEPARTMENTS REQUIRING IMMEDIATE ATTENTION
-
-1. MENTAL HEALTH SERVICES
-   • Current Status: Underrepresented across 15+ states
-   • Critical States: Montana, Wyoming, North Dakota, South Dakota
-   • Action Required: Recruit 200+ mental health providers in underserved regions
-
-2. PEDIATRIC SPECIALTY CARE
-   • Current Status: Gaps in rural areas
-   • Critical States: Arkansas, Mississippi, Alabama
-   • Action Required: Establish pediatric specialty networks in 8 target markets
-
-3. TELEHEALTH INFRASTRUCTURE
-   • Current Status: Limited coverage in remote areas
-   • Recommendation: Invest in telehealth partnerships
-   • Target: 30% increase in virtual care providers
-
-📊 REGIONAL STRATEGY
-
-NORTHEAST REGION
-• Strengths: Strong urban coverage
-• Weaknesses: Rural access gaps
-• Action: Expand into Maine, Vermont, New Hampshire rural markets
-
-SOUTHWEST REGION
-• Strengths: Growing presence in major metros
-• Weaknesses: Specialty care gaps
-• Action: Focus on oncology and cardiology networks
-
-MIDWEST REGION
-• Strengths: Consistent coverage
-• Weaknesses: Limited specialty access
-• Action: Partner with regional health systems
-
-💡 QUICK WINS
-
-1. Partner with existing high-performing providers in Texas and California
-2. Launch telehealth initiatives in underserved states (MT, WY, ND, SD)
-3. Recruit specialty providers in high-demand areas (Cardiology, Oncology)
-4. Expand mental health network by 25% in next 6 months
-
-These recommendations are based on current provider distribution patterns and market demand analysis.`;
-
-        setAnalysisResult(mockAnalysis);
-        setIsAnalyzing(false);
+        } catch (e) {
+            console.error("Analysis failed", e);
+            setAnalysisResult("Error connecting to analysis service.");
+        } finally {
+            setIsAnalyzing(false);
+        }
     };
 
     const hoveredStateData = hoveredFIPS ? getStateData(hoveredFIPS) : null;
