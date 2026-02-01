@@ -26,7 +26,9 @@ CREATE TABLE providers_master_prof (
     state VARCHAR,
     postal_code VARCHAR,
     country VARCHAR,
-    taxonomies JSONB -- Storing list of dicts as JSONB
+    taxonomies JSONB, -- Storing list of dicts as JSONB
+    taxonomy_code VARCHAR,
+    specialties VARCHAR[]
 );
 -- 3. Table: providers_master_meta (Validation Metadata)
 CREATE TABLE providers_master_meta (
@@ -47,6 +49,7 @@ CREATE TABLE providers_master_meta (
     last_verified TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     overall_confidence FLOAT,
     status VARCHAR DEFAULT 'needs_review',
+    raw_data_json JSONB,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
