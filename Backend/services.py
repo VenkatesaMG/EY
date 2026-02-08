@@ -62,27 +62,81 @@ class ValidationService:
         await db.commit()
         logger.info(f"🤖 Step 2: AI Validation in progress...")
 
-        # 2. Compare with Gemini
-        row_data = {
-            "name": f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or data.get("organization_name"),
-            "address": f"{data.get('locations', [{}])[0].get('street_address_1')}, {data.get('locations', [{}])[0].get('city')}",
-            "phone": data.get("phone"),
-            "specialty": data.get("specialties", [""])[0] if data.get("specialties") else "",
-        }
-
+        # 2. Deterministic Verification & Conflict Resolution
         try:
-            comparison = compare_row_with_npi_gemini(row_data, npi_info)
+            # We process verification LOCALLY instead of asking Gemini for basic matching
             
-            overall_confidence = comparison.get("confidence", 0.0)
-            overall_match = comparison.get("overall_match", False)
+            from difflib import SequenceMatcher
             
-            logger.info(f"🤖 AI Validation: Confidence={overall_confidence}% | Match={overall_match}")
+            def calculate_similarity(a, b):
+                if not a or not b: return 0.0
+                return SequenceMatcher(None, str(a).lower().strip(), str(b).lower().strip()).ratio() * 100
+
+            def calculate_jaccard(a, b):
+                if not a or not b: return 0.0
+                set_a = set(str(a).lower().split())
+                set_b = set(str(b).lower().split())
+                if not set_a or not set_b: return 0.0
+                intersection = len(set_a.intersection(set_b))
+                union = len(set_a.union(set_b))
+                return (intersection / union) * 100
+
+            # Prepare comparisons
+            input_name = f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or data.get("organization_name", "")
+            npi_name = f"{npi_info.get('first_name', '')} {npi_info.get('last_name', '')}".strip()
+            if not npi_name.strip(): npi_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name", "")
+
+            name_score = calculate_similarity(input_name, npi_name)
             
-            status = "verified" if (overall_match and overall_confidence >= 80) else "needs_review"
+            # Address construction
+            input_addr = f"{data.get('locations', [{}])[0].get('street_address_1', '')} {data.get('locations', [{}])[0].get('city', '')}"
+            npi_addr_dict = npi_info.get("primary_practice_address", {})
+            npi_addr = f"{npi_addr_dict.get('address_1', '')} {npi_addr_dict.get('city', '')}"
             
+            addr_score = calculate_jaccard(input_addr, npi_addr)
+            
+            # Phone verification (Exact match on last 10 digits)
+            input_phone = "".join(filter(str.isdigit, str(data.get("phone") or "")))
+            npi_phone = "".join(filter(str.isdigit, str(npi_addr_dict.get("telephone_number") or "")))
+            phone_match = (input_phone[-10:] == npi_phone[-10:]) and len(input_phone) >= 10
+            
+            # --- Weighted Confidence Calculation ---
+            # Formula: (NPI_Exact * 40) + (Name_Sim * 0.2) + (Addr_Sim * 0.2) + (Phone * 10) ... roughly
+            # Simplified based on user request:
+            # Base 40 for NPI existing (which is true here)
+            score = 40.0
+            
+            # Name Sim (Max 20 points)
+            score += (name_score / 100.0) * 20.0
+            
+            # Address Sim (Max 20 points)
+            score += (addr_score / 100.0) * 20.0
+            
+            # Phone Match (10 points)
+            if phone_match: score += 10.0
+            
+            # Penalties based on critical mismatches
+            manual_review = False
+            flags = []
+            
+            if name_score < 70: 
+                score -= 20
+                flags.append("name_mismatch")
+                manual_review = True
+                
+            if addr_score < 50:
+                flags.append("address_mismatch")
+                # We don't penalize score too heavily for address as providers move
+                
+            # Cap score
+            final_confidence = max(0, min(100, score))
+            if final_confidence < 60: manual_review = True
+
+            logger.info(f"⚖️ Verifiction: Name={name_score:.1f}% | Addr={addr_score:.1f}% | Phone={phone_match}")
+            logger.info(f"📊 Confidence Score: {final_confidence:.1f} | Manual Review: {manual_review}")
+
             # 3. Upsert to Golden Record Provider Tables
             
-            # Fetch existing provider with all relations
             stmt = select(ProviderPersonal).options(
                 selectinload(ProviderPersonal.professional),
                 selectinload(ProviderPersonal.meta)
@@ -91,108 +145,108 @@ class ValidationService:
             result = await db.execute(stmt)
             provider = result.scalars().first()
             
-            # Create if not exists
             if not provider:
                 provider = ProviderPersonal(npi=npi_val)
                 db.add(provider)
-                
-                # Must flush to ensure existence before creating related records if strictly enforced FKs in separate transactions (but here same transaction is fine)
-                # We will create the children objects
                 prof = ProviderProfessional(npi=npi_val)
                 meta = ProviderMeta(npi=npi_val)
-                
-                # Link them (SQLAlchemy should handle FK assignment via relationship, but explicit is safer for insert)
                 provider.professional = prof
                 provider.meta = meta
-                
                 db.add(prof)
                 db.add(meta)
             else:
-                # Ensure relations exist (in case of partial data corruption)
-                if not provider.professional:
-                    provider.professional = ProviderProfessional(npi=npi_val)
-                if not provider.meta:
-                    provider.meta = ProviderMeta(npi=npi_val)
+                if not provider.professional: provider.professional = ProviderProfessional(npi=npi_val)
+                if not provider.meta: provider.meta = ProviderMeta(npi=npi_val)
             
-            # --- Map Data to Normalized Tables ---
+            # --- Apply Field-Level Locking (Source of Truth) ---
+            now_str = datetime.utcnow().isoformat()
             
-            # 1. Personal Info
+            # Helper to update metadata
+            def update_meta(obj, field, source):
+                current_meta = obj.field_metadata or {}
+                current_meta[field] = {
+                    "source": source,
+                    "confidence": 100.0 if source == 'npi' else final_confidence,
+                    "verified_at": now_str
+                }
+                # Re-assign to trigger SQLalchemy detection (for JSON mutation)
+                obj.field_metadata = dict(current_meta)
+
+            # 1. LOCKED FIELDS (NPI Source)
+            # We always overwrite with NPI data if available, regardless of input
             provider.first_name = npi_info.get("first_name")
-            provider.last_name = npi_info.get("last_name")
+            update_meta(provider, 'first_name', 'npi')
             
-            if npi_info.get("enumeration_type") == "NPI-2": # Organization
+            provider.last_name = npi_info.get("last_name")
+            update_meta(provider, 'last_name', 'npi')
+            
+            if npi_info.get("enumeration_type") == "NPI-2":
                 org_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name")
                 provider.display_name = org_name
-                provider.professional.practice_name = org_name
             else:
                 provider.display_name = f"{provider.first_name} {provider.last_name}".strip()
+            update_meta(provider, 'display_name', 'npi')
 
-            # Contact & Address (Use NPI address as primary)
-            npi_addr = npi_info.get("primary_practice_address", {})
-            
-            # Personal Contact Info (from NPI or User Input)
-            provider.phone = npi_addr.get("telephone_number") or data.get("phone")
-            provider.email = data.get("primary_email")
-            
-            # Personal Address
-            provider.address_line1 = npi_addr.get("address_1")
-            provider.city = npi_addr.get("city")
-            provider.state = npi_addr.get("state")
-            provider.postal_code = npi_addr.get("postal_code")
-            provider.country = npi_addr.get("country_code", "US")
-
-            # 2. Professional Info
-            # Also map address to professional (practice address)
-            provider.professional.address_line1 = npi_addr.get("address_1")
-            provider.professional.city = npi_addr.get("city")
-            provider.professional.state = npi_addr.get("state")
-            provider.professional.postal_code = npi_addr.get("postal_code")
-            provider.professional.country = npi_addr.get("country_code", "US")
-            
-            provider.professional.website = data.get("website")
-            
-            # Taxonomy
+            # Taxonomy Locked
             if npi_info.get("primary_taxonomy"):
                 provider.professional.taxonomy_code = npi_info.get("primary_taxonomy", {}).get("code")
-                # Store full taxonomies list as JSON
                 provider.professional.taxonomies = npi_info.get("taxonomies", [])
+                update_meta(provider.professional, 'taxonomy_code', 'npi')
 
-            # 3. Validation Meta
+            # 2. ENRICHABLE FIELDS (Scrape/Input Source)
+            # Only update from input if NPI is empty OR if input is deemed high quality (e.g. website)
+            
+            # Phone: If NPI has it, use it. If not, use Input.
+            if npi_addr_dict.get("telephone_number"):
+                provider.phone = npi_addr_dict.get("telephone_number")
+                update_meta(provider, 'phone', 'npi')
+            elif data.get("phone"):
+                provider.phone = data.get("phone")
+                update_meta(provider, 'phone', 'submission')
+
+            # Addresses: Keep NPI as primary for now (simplification), log mismatch
+            # We store NPI address to ensure mailing works
+            provider.address_line1 = npi_addr_dict.get("address_1")
+            provider.city = npi_addr_dict.get("city")
+            provider.state = npi_addr_dict.get("state")
+            provider.postal_code = npi_addr_dict.get("postal_code")
+            provider.country = npi_addr_dict.get("country_code", "US")
+            update_meta(provider, 'address', 'npi')
+            
+            # Website: NPI usually doesn't have it, so Input wins
+            if data.get("website"):
+                provider.professional.website = data.get("website")
+                update_meta(provider.professional, 'website', 'submission')
+            
+            # 3. Update Meta
             provider.meta.raw_data_json = data 
-            provider.meta.status = status
-            provider.meta.overall_confidence = overall_confidence
+            provider.meta.status = "needs_review" if manual_review else "verified"
+            provider.meta.manual_review_required = manual_review
+            provider.meta.confidence_score = final_confidence
+            provider.meta.data_quality_flags = flags
+            
+            # Deprecated fields (kept for compatibility)
             provider.meta.npi_status = "VALID"
             provider.meta.npi_confidence = 100.0
-            
-            # Map detailed validation
-            fields = comparison.get("fields", {})
-            
-            name_res = fields.get("name", {})
-            provider.meta.name_status = "VERIFIED" if name_res.get("match") else "MISMATCH"
-            provider.meta.name_confidence = name_res.get("confidence", 0.0)
-
-            addr_res = fields.get("address", {})
-            provider.meta.address_status = "VERIFIED" if addr_res.get("match") else "MISMATCH"
-            provider.meta.address_confidence = addr_res.get("confidence", 0.0)
-            
-            spec_res = fields.get("specialty", {})
-            provider.meta.taxonomy_status = "VERIFIED" if spec_res.get("match") else "MISMATCH"
-            provider.meta.taxonomy_confidence = spec_res.get("confidence", 0.0)
+            provider.meta.name_status = "VERIFIED" if name_score > 80 else "MISMATCH"
+            provider.meta.name_confidence = name_score
+            provider.meta.address_status = "VERIFIED" if addr_score > 70 else "MISMATCH" 
+            provider.meta.address_confidence = addr_score
+            provider.meta.overall_confidence = final_confidence
             
             provider.meta.last_verified = datetime.utcnow()
             
             submission.processing_status = "processed"
-            
             await db.commit()
             
-            # Trigger Enrichment if confidence is low
-            if status == "needs_review":
-                logger.warning(f"⚠️  Confidence {overall_confidence}% < 80% → Triggering Enrichment Agent")
-                # Update status to enriching
-                submission.processing_status = "enriching"
-                await db.commit()
-                logger.info(f"🌐 Step 3: Web Enrichment in progress...")
-                await EnrichmentService.enrich_provider(provider, submission, db)
+            # Trigger Enrichment only if we strictly need it AND not purely for correction
+            # If manual review is needed, enrichment might help clarify
+            if manual_review and not flags: # If no specific flags but low score?
+                pass 
+            elif manual_review and "name_mismatch" in flags:
+                # Name mismatch shouldn't trigger auto-enrichment usually as it might be wrong person
+                pass
+
             
         except Exception as e:
             logger.error(f"❌ Validation Error: {e}")
