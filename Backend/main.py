@@ -12,6 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
+from sqlalchemy import func
 import csv
 import io
 import codecs
@@ -461,8 +462,39 @@ async def verify_provider_email(provider_id: str, db: AsyncSession = Depends(get
         logger.error(f"Error triggering email verification: {e}")
         raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
 
+
+@app.get("/analytics/geo-distribution")
+async def get_geo_distribution(db: AsyncSession = Depends(get_db)):
+    """
+    Get provider counts by state.
+    """
+    try:
+        # Group by state from ProviderProfessional (which has practice address)
+        # Use simple group by count
+        stmt = select(
+            ProviderProfessional.state, 
+            func.count(ProviderProfessional.id)
+        ).group_by(ProviderProfessional.state)
+        
+        result = await db.execute(stmt)
+        rows = result.all()
+        
+        # Convert to dictionary { "CA": 120, "TX": 50, ... }
+        # Filter out None states
+        state_counts = {
+            row[0]: row[1] 
+            for row in rows 
+            if row[0]
+        }
+        
+        return state_counts
+    except Exception as e:
+        logger.error(f"Error fetching geo analytics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/analyze/map-data")
 async def analyze_map_data(data: dict = Body(...)):
+
     """
     Analyze geographic distribution data using Gemini AI.
     """

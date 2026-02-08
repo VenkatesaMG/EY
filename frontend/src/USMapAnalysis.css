@@ -21,9 +21,9 @@
 
 .map-analysis-layout {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1.5rem;
+    grid-template-columns: 1fr;
     margin-bottom: 1.5rem;
+    transition: all 0.4s ease;
 }
 
 .map-section {
@@ -196,6 +196,7 @@
     from {
         transform: rotate(0deg);
     }
+
     to {
         transform: rotate(360deg);
     }
@@ -292,4 +293,3 @@
         align-items: flex-start;
     }
 }
-
