@@ -106,7 +106,7 @@ const USMapAnalysis = () => {
         const counts = Object.values(stateDataByFIPS).map(d => d.count);
         const minCount = Math.min(...counts);
         const maxCount = Math.max(...counts);
-        
+
         return scaleQuantize()
             .domain([minCount, maxCount])
             .range([
@@ -234,7 +234,7 @@ These recommendations are based on current provider distribution patterns and ma
             <div className="map-analysis-layout">
                 {/* Map Section */}
                 <div className="map-section">
-                    <div 
+                    <div
                         ref={setMapRef}
                         className="map-container"
                         onMouseMove={handleMouseMove}
@@ -245,136 +245,155 @@ These recommendations are based on current provider distribution patterns and ma
                             style={{ width: '100%', height: '100%' }}
                         >
                             <Geographies geography={geoUrl}>
-                        {({ geographies }) => (
-                            <>
-                                {geographies.map((geo) => {
-                                    const fips = geo.id;
-                                    const stateData = getStateData(fips);
-                                    const count = stateData?.count || 0;
-                                    const isHovered = hoveredFIPS === fips;
-                                    const fillColor = count > 0 ? colorScale(count) : "#e5e7eb"; // Gray for no data
+                                {({ geographies }) => (
+                                    <>
+                                        {geographies.map((geo) => {
+                                            const fips = geo.id;
+                                            const stateData = getStateData(fips);
+                                            const count = stateData?.count || 0;
+                                            const isHovered = hoveredFIPS === fips;
+                                            const fillColor = count > 0 ? colorScale(count) : "#e5e7eb"; // Gray for no data
 
-                                    return (
-                                        <Geography
-                                            key={geo.rsmKey}
-                                            geography={geo}
-                                            fill={fillColor}
-                                            stroke={isHovered ? "#3b82f6" : "#fff"}
-                                            strokeWidth={isHovered ? 2 : 0.5}
-                                            style={{
-                                                default: {
-                                                    outline: 'none',
-                                                    cursor: 'pointer',
-                                                    transition: 'all 0.2s ease',
-                                                },
-                                                hover: {
-                                                    outline: 'none',
-                                                    fill: isHovered ? fillColor : fillColor,
-                                                    stroke: "#3b82f6",
-                                                    strokeWidth: 2,
-                                                },
-                                                pressed: {
-                                                    outline: 'none',
+                                            return (
+                                                <Geography
+                                                    key={geo.rsmKey}
+                                                    geography={geo}
+                                                    fill={fillColor}
+                                                    stroke={isHovered ? "#3b82f6" : "#fff"}
+                                                    strokeWidth={isHovered ? 2 : 0.5}
+                                                    style={{
+                                                        default: {
+                                                            outline: 'none',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.2s ease',
+                                                        },
+                                                        hover: {
+                                                            outline: 'none',
+                                                            fill: isHovered ? fillColor : fillColor,
+                                                            stroke: "#3b82f6",
+                                                            strokeWidth: 2,
+                                                        },
+                                                        pressed: {
+                                                            outline: 'none',
+                                                        }
+                                                    }}
+                                                    onMouseEnter={() => {
+                                                        setHoveredFIPS(fips);
+                                                    }}
+                                                    onMouseLeave={() => {
+                                                        setHoveredFIPS(null);
+                                                    }}
+                                                />
+                                            );
+                                        })}
+
+                                        {/* State Labels - Show abbreviation on hover */}
+                                        {hoveredFIPS && (() => {
+                                            const geo = geographies.find(g => g.id === hoveredFIPS);
+                                            if (!geo) return null;
+                                            const abbr = fipsToAbbr[hoveredFIPS];
+                                            if (!abbr) return null;
+
+                                            // Get coordinates from geography - robust centroid validation
+                                            const geometry = geo.geometry;
+                                            if (!geometry) return null;
+
+                                            // Use centroid if available (some projections add it) or fallback to simple calculation
+                                            // But finding a point on surface is safer:
+                                            let candidatePoint = [0, 0];
+
+                                            try {
+                                                const coords = geometry.coordinates;
+                                                if (!coords || coords.length === 0) return null;
+
+                                                if (geometry.type === "Polygon") {
+                                                    // coords[0] is the outer ring. coords[0][0] is the first point.
+                                                    candidatePoint = coords[0][0];
+                                                } else if (geometry.type === "MultiPolygon") {
+                                                    // coords[0] is first Polygon. coords[0][0] is first ring. coords[0][0][0] is first point.
+                                                    candidatePoint = coords[0][0][0];
+                                                } else {
+                                                    // fallback
+                                                    return null;
                                                 }
-                                            }}
-                                            onMouseEnter={() => {
-                                                setHoveredFIPS(fips);
-                                            }}
-                                            onMouseLeave={() => {
-                                                setHoveredFIPS(null);
-                                            }}
-                                        />
-                                    );
-                                })}
-                                
-                                {/* State Labels - Show abbreviation on hover */}
-                                {hoveredFIPS && (() => {
-                                    const geo = geographies.find(g => g.id === hoveredFIPS);
-                                    if (!geo) return null;
-                                    const abbr = fipsToAbbr[hoveredFIPS];
-                                    if (!abbr) return null;
-                                    
-                                    // Get coordinates from geography - use a point from the geometry
-                                    const coords = geo.coordinates;
-                                    let centerX = 0, centerY = 0;
-                                    
-                                    if (coords && coords.length > 0) {
-                                        // For polygons, get the first ring's first point as approximate center
-                                        const firstRing = Array.isArray(coords[0][0]) ? coords[0] : coords;
-                                        const firstPoint = firstRing[0];
-                                        centerX = firstPoint[0];
-                                        centerY = firstPoint[1];
-                                    }
-                                    
-                                    return (
-                                        <Annotation
-                                            key={`label-${hoveredFIPS}`}
-                                            subject={[centerX, centerY]}
-                                            dx={0}
-                                            dy={0}
-                                        >
-                                            <text
-                                                x={0}
-                                                y={0}
-                                                fontSize={12}
-                                                fontWeight={600}
-                                                fill="#3b82f6"
-                                                textAnchor="middle"
-                                                style={{
-                                                    pointerEvents: 'none',
-                                                    userSelect: 'none',
-                                                    textShadow: '0 1px 2px rgba(0,0,0,0.3)'
-                                                }}
-                                            >
-                                                {abbr}
-                                            </text>
-                                        </Annotation>
-                                    );
-                                })()}
-                            </>
-                        )}
+
+                                                // Ensure we have numbers
+                                                if (!Array.isArray(candidatePoint) || candidatePoint.length < 2 || typeof candidatePoint[0] !== 'number') {
+                                                    return null;
+                                                }
+                                            } catch (e) {
+                                                return null;
+                                            }
+
+                                            return (
+                                                <Annotation
+                                                    key={`label-${hoveredFIPS}`}
+                                                    subject={candidatePoint}
+                                                    dx={0}
+                                                    dy={0}
+                                                >
+                                                    <text
+                                                        x={0}
+                                                        y={0}
+                                                        fontSize={12}
+                                                        fontWeight={600}
+                                                        fill="#3b82f6"
+                                                        textAnchor="middle"
+                                                        style={{
+                                                            pointerEvents: 'none',
+                                                            userSelect: 'none',
+                                                            textShadow: '0 1px 2px rgba(0,0,0,0.3)'
+                                                        }}
+                                                    >
+                                                        {abbr}
+                                                    </text>
+                                                </Annotation>
+                                            );
+                                        })()}
+                                    </>
+                                )}
                             </Geographies>
                         </ComposableMap>
 
                         {/* Tooltip */}
-                <AnimatePresence>
-                    {hoveredFIPS && hoveredStateData && (
-                        <motion.div
-                            className="state-tooltip"
-                            initial={{ opacity: 0, scale: 0.8 }}
-                            animate={{ 
-                                opacity: 1, 
-                                scale: 1,
-                                x: tooltipPosition.x,
-                                y: tooltipPosition.y
-                            }}
-                            exit={{ opacity: 0, scale: 0.8 }}
-                            style={{
-                                position: 'absolute',
-                                left: tooltipPosition.x + 10,
-                                top: tooltipPosition.y - 10,
-                                pointerEvents: 'none',
-                                zIndex: 1000,
-                                transform: 'translate(0, -100%)'
-                            }}
-                        >
-                            <div className="tooltip-header">
-                                <MapPin size={16} />
-                                <strong>{hoveredStateData.name}</strong>
-                            </div>
-                            <div className="tooltip-content">
-                                <div className="tooltip-row">
-                                    <span>Submissions:</span>
-                                    <strong>{hoveredStateData.count.toLocaleString()}</strong>
-                                </div>
-                                <div className="tooltip-row">
-                                    <span>Providers:</span>
-                                    <strong>{hoveredStateData.providers.toLocaleString()}</strong>
-                                </div>
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
+                        <AnimatePresence>
+                            {hoveredFIPS && hoveredStateData && (
+                                <motion.div
+                                    className="state-tooltip"
+                                    initial={{ opacity: 0, scale: 0.8 }}
+                                    animate={{
+                                        opacity: 1,
+                                        scale: 1,
+                                        x: tooltipPosition.x,
+                                        y: tooltipPosition.y
+                                    }}
+                                    exit={{ opacity: 0, scale: 0.8 }}
+                                    style={{
+                                        position: 'absolute',
+                                        left: tooltipPosition.x + 10,
+                                        top: tooltipPosition.y - 10,
+                                        pointerEvents: 'none',
+                                        zIndex: 1000,
+                                        transform: 'translate(0, -100%)'
+                                    }}
+                                >
+                                    <div className="tooltip-header">
+                                        <MapPin size={16} />
+                                        <strong>{hoveredStateData.name}</strong>
+                                    </div>
+                                    <div className="tooltip-content">
+                                        <div className="tooltip-row">
+                                            <span>Submissions:</span>
+                                            <strong>{hoveredStateData.count.toLocaleString()}</strong>
+                                        </div>
+                                        <div className="tooltip-row">
+                                            <span>Providers:</span>
+                                            <strong>{hoveredStateData.providers.toLocaleString()}</strong>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
 
                     {/* Legend */}

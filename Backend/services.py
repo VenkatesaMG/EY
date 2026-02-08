@@ -68,7 +68,14 @@ class ValidationService:
             logger.info(f"🤖 Step 2: AI Validation in progress...")
 
             # Filling the Details
-            print(npi_info)
+            provider_per = Provider_Personal
+            provider_per.npi = npi_info.get('npi')
+            provider_per.first_name = npi_info.get('first_name')
+            provider_per.last_name = npi_info.get('last_name')
+            provider_per.sex = npi_info.get('basic').get('sex')
+            provider_per.phone = data.get('phone')
+            provider_per.email = data.get('email')
+            
             # 2. Compare with Gemini
             row_data = {
                 "name": f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or data.get("organization_name"),
