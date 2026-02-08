@@ -41,7 +41,9 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -106,6 +108,7 @@ async def submit_provider(
         await db.commit()
         await db.refresh(submission)
         
+        print("Starting Background Task...")
         # Trigger validation in BACKGROUND
         # This allows immediate response to UI so it can start polling/visualizing
         background_tasks.add_task(ValidationService.process_submission, submission.submission_id)

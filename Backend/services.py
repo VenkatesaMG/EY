@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from models import Provider_Personal, Provider_Professional, Provider_Meta, RawProviderSubmission
+from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission
 from Validation.NPI import lookup_npi
 from Validation.gemini_compare import compare_row_with_npi_gemini
 from Agents.enrichment_agent_v0 import EnrichmentManager
@@ -68,11 +68,11 @@ class ValidationService:
             logger.info(f"🤖 Step 2: AI Validation in progress...")
 
             # Filling the Details
-            provider_per = Provider_Personal
+            provider_per = ProviderPersonal()
             provider_per.npi = npi_info.get('npi')
             provider_per.first_name = npi_info.get('first_name')
             provider_per.last_name = npi_info.get('last_name')
-            provider_per.sex = npi_info.get('basic').get('sex')
+            provider_per.sex = npi_info.get('sex')
             provider_per.phone = data.get('phone')
             provider_per.email = data.get('email')
             
@@ -100,11 +100,11 @@ class ValidationService:
                 # 3. Upsert to Golden Record Provider Table
                 # STRATEGY: Update Master Table with NPI Registry Data (The Source of Truth)
                 
-                existing_q = await db.execute(select(Provider_Personal).filter(Provider_Personal.npi == npi_val))
+                existing_q = await db.execute(select(ProviderPersonal).filter(ProviderPersonal.npi == npi_val))
                 provider = existing_q.scalars().first()
                 
                 if not provider:
-                    provider = Provider_Personal(npi=npi_val)
+                    provider = ProviderPersonal(npi=npi_val)
                     db.add(provider)
                 
                 # Map NPI Registry Data (Golden Source)
@@ -184,7 +184,7 @@ class ValidationService:
 
 class EnrichmentService:
     @staticmethod
-    async def enrich_provider(provider: Provider_Personal, submission: RawProviderSubmission, db: AsyncSession):
+    async def enrich_provider(provider: ProviderPersonal, submission: RawProviderSubmission, db: AsyncSession):
         """
         Scrapes web to find missing fields for the provider.
         Uses enrichment_agent_v0 which uses Selenium + Ollama.
