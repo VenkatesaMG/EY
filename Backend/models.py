@@ -109,6 +109,10 @@ class ProviderMeta(Base):
     confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
     data_quality_flags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
 
+    # Verification Token for Email Agent
+    verification_token: Mapped[str] = mapped_column(String, nullable=True, unique=True)
+    token_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
     # We can store the raw payload here or in a separate raw_data column if needed, 
     # but the prompt didn't specify it in this table. 
     # However, keeping it is useful for the app logic.

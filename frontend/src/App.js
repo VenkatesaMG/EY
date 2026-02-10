@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { UserPlus, LayoutDashboard, Sparkles, Map } from 'lucide-react';
 import './App.css';
@@ -6,20 +6,12 @@ import OnboardingForm from './OnboardingForm';
 import Dashboard from './Dashboard';
 import ProviderDetail from './ProviderDetail';
 import AnalysisPage from './AnalysisPage';
+import VerificationPage from './VerificationPage';
 
 const pageVariants = {
-  initial: {
-    opacity: 0,
-    y: 20,
-  },
-  in: {
-    opacity: 1,
-    y: 0,
-  },
-  out: {
-    opacity: 0,
-    y: -20,
-  }
+  initial: { opacity: 0, y: 20 },
+  in: { opacity: 1, y: 0 },
+  out: { opacity: 0, y: -20 }
 };
 
 const pageTransition = {
@@ -32,6 +24,13 @@ function App() {
   const [view, setView] = useState('onboard');
   const [selectedProviderId, setSelectedProviderId] = useState(null);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('token')) {
+      setView('verification');
+    }
+  }, []);
+
   const handleSelectProvider = (id) => {
     setSelectedProviderId(id);
     setView('detail');
@@ -43,6 +42,24 @@ function App() {
       setSelectedProviderId(null);
     }
   };
+
+  if (view === 'verification') {
+    return (
+      <div className="App">
+        <header className="App-header" style={{ justifyContent: 'center' }}>
+          <h1>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Sparkles size={20} style={{ opacity: 0.8 }} />
+              HealthValidator.ai Verification Portal
+            </span>
+          </h1>
+        </header>
+        <main className="App-content">
+          <VerificationPage />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="App">

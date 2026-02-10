@@ -434,34 +434,184 @@ async def seed_mock_data(db: AsyncSession = Depends(get_db)):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Seeding failed: {str(e)}")
 
+from datetime import datetime, timedelta
+from Agents.email_agent import EmailVerificationAgent
+
 @app.post("/providers/{provider_id}/verify-email")
 async def verify_provider_email(provider_id: str, db: AsyncSession = Depends(get_db)):
     """
     Trigger email verification for a provider.
+    Generates a token, saves it, and sends a link.
     """
     try:
         # Assuming provider_id is NPI for consistency
-        result = await db.execute(select(ProviderPersonal).filter(ProviderPersonal.npi == provider_id))
+        result = await db.execute(select(ProviderPersonal).options(selectinload(ProviderPersonal.meta)).filter(ProviderPersonal.npi == provider_id))
         provider = result.scalars().first()
         
         if not provider:
-            # Fallback: try searching by ID if it was an int (though we use string arg)
-            # This is complex in new schema. We stick to NPI.
             raise HTTPException(status_code=404, detail="Provider not found")
         
-        logger.info(f"📧 Email verification triggered for Provider {provider.display_name} | NPI: {provider.npi}")
+        # Initialize Agent
+        # In prod, base_url would come from env (e.g. frontend URL)
+        email_agent = EmailVerificationAgent(base_url="http://localhost:3000") 
         
+        # Generate Token
+        token = email_agent.generate_verification_token()
+        
+        # Update DB
+        if not provider.meta:
+            provider.meta = ProviderMeta(npi=provider.npi)
+            
+        provider.meta.verification_token = token
+        provider.meta.token_expires_at = datetime.utcnow() + timedelta(hours=48)
+        
+        await db.commit()
+        
+        # Send Email
+        link = email_agent.create_verification_link(token)
+        sent = email_agent.send_verification_email(
+            recipient_email=provider.email or "test@example.com",
+            recipient_name=provider.display_name or "Doctor",
+            verification_link=link
+        )
+        
+        if sent:
+            logger.info(f"📧 Email request sent for {provider.npi}. Token: {token}")
+            return {
+                "success": True,
+                "message": f"Verification email sent to {provider.email}",
+                "debug_link": link # Returning link for demo purposes since we can't check email
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send email")
+
+    except Exception as e:
+        logger.error(f"Error triggering email verification: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
+
+@app.get("/verification/{token}")
+async def get_verification_data(token: str, db: AsyncSession = Depends(get_db)):
+    """
+    Retrieve provider data based on verification token.
+    Used by the external verification page.
+    """
+    try:
+        # Find connection by token
+        stmt = select(ProviderMeta).options(
+            selectinload(ProviderMeta.personal).selectinload(ProviderPersonal.professional)
+        ).filter(ProviderMeta.verification_token == token)
+        
+        result = await db.execute(stmt)
+        meta = result.scalars().first()
+        
+        if not meta:
+            raise HTTPException(status_code=404, detail="Invalid verification token")
+            
+        if meta.token_expires_at and meta.token_expires_at < datetime.utcnow():
+            raise HTTPException(status_code=400, detail="Verification link has expired")
+            
+        p = meta.personal
+        prof = p.professional
+        
+        # Return editable fields
         return {
-            "success": True,
-            "message": f"Verification email sent to provider {provider.display_name}",
-            "provider_id": provider_id,
-            "email": provider.email or "No email on file"
+            "npi": p.npi,
+            "display_name": p.display_name,
+            "first_name": p.first_name,
+            "last_name": p.last_name,
+            "email": p.email,
+            "phone": p.phone,
+            "practice_name": prof.practice_name,
+            "specialties": prof.specialties,
+            "address_line1": p.address_line1 or prof.address_line1,
+            "city": p.city or prof.city,
+            "state": p.state or prof.state,
+            "postal_code": p.postal_code or prof.postal_code,
+            "website": prof.website,
+            "accepting_new_patients": prof.accepting_new_patients,
+            "telehealth": prof.telehealth,
+            "token_valid": True
         }
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error triggering email verification: {e}")
-        raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
+        logger.error(f"Error retrieving verification data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/verification/{token}/submit")
+async def submit_verification_data(token: str, data: dict = Body(...), db: AsyncSession = Depends(get_db)):
+    """
+    Provider submits verified/corrected data.
+    Overrides existing data and marks as Verified.
+    """
+    try:
+        stmt = select(ProviderMeta).options(
+            selectinload(ProviderMeta.personal).selectinload(ProviderPersonal.professional)
+        ).filter(ProviderMeta.verification_token == token)
+        
+        result = await db.execute(stmt)
+        meta = result.scalars().first()
+        
+        if not meta:
+            raise HTTPException(status_code=404, detail="Invalid token")
+            
+        if meta.token_expires_at and meta.token_expires_at < datetime.utcnow():
+            raise HTTPException(status_code=400, detail="Token expired")
+            
+        p = meta.personal
+        prof = p.professional
+        
+        # Update fields if provided
+        # We explicitly trust the provider input here
+        
+        if "first_name" in data: p.first_name = data["first_name"]
+        if "last_name" in data: p.last_name = data["last_name"]
+        if "display_name" in data: p.display_name = data["display_name"]
+        if "email" in data: p.email = data["email"]
+        if "phone" in data: p.phone = data["phone"]
+        
+        # Professional
+        if "practice_name" in data: prof.practice_name = data["practice_name"]
+        if "website" in data: prof.website = data["website"]
+        if "accepting_new_patients" in data: prof.accepting_new_patients = data["accepting_new_patients"]
+        if "telehealth" in data: prof.telehealth = data["telehealth"]
+        
+        # Address (Sync both for simplicity in this flow)
+        if "address_line1" in data: 
+            p.address_line1 = data["address_line1"]
+            prof.address_line1 = data["address_line1"]
+        if "city" in data:
+            p.city = data["city"]
+            prof.city = data["city"]
+        if "state" in data:
+            p.state = data["state"]
+            prof.state = data["state"]
+        if "postal_code" in data:
+            p.postal_code = data["postal_code"]
+            prof.postal_code = data["postal_code"]
+            
+        # Update Meta Status
+        meta.status = "verified_by_provider"
+        meta.overall_confidence = 100.0
+        meta.last_verified = datetime.utcnow()
+        meta.verification_token = None # Consume token
+        
+        # Add a flag to indicate self-verification
+        if meta.data_quality_flags:
+            meta.data_quality_flags = [f for f in meta.data_quality_flags if "mismatch" not in f]
+        meta.data_quality_flags = (meta.data_quality_flags or []) + ["self_verified"]
+
+        await db.commit()
+        
+        return {"success": True, "message": "Information verified successfully"}
+
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error submitting verification: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/analytics/geo-distribution")

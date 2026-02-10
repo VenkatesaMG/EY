@@ -260,6 +260,33 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                 {provider.overall_confidence}% confidence
                             </span>
                         )}
+                        <button
+                            onClick={async () => {
+                                try {
+                                    const res = await fetch(`http://localhost:8000/providers/${provider.npi}/verify-email`, { method: 'POST' });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                        alert(`Verification email sent!\nLink (Debug): ${data.debug_link}`);
+                                    } else {
+                                        alert("Failed to send verification email.");
+                                    }
+                                } catch (err) {
+                                    alert("Error: " + err.message);
+                                }
+                            }}
+                            className="action-button primary"
+                            style={{
+                                padding: '0.25rem 0.75rem',
+                                fontSize: '0.75rem',
+                                marginLeft: '0.5rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem'
+                            }}
+                        >
+                            <Mail size={12} />
+                            Verify via Email
+                        </button>
                     </div>
                 </div>
             </div>
