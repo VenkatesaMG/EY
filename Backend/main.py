@@ -220,8 +220,19 @@ async def onboard_csv_upload(file: UploadFile = File(...), db: AsyncSession = De
     """
     Batch processing for CSV.
     """
+    import codecs
     try:
-        csv_file = io.TextIOWrapper(file.file, encoding="utf-8")
+        # robust encoding handling
+        # standard utf-8-sig handles BOM if present (common in Excel CSVs)
+        # fallback to latin-1 if utf-8 fails
+        content = await file.read()
+        
+        try:
+            text = content.decode("utf-8-sig")
+        except UnicodeDecodeError:
+            text = content.decode("latin-1")
+            
+        csv_file = io.StringIO(text)
         reader = csv.DictReader(csv_file)
         
         submissions_created = []
@@ -253,6 +264,9 @@ async def onboard_csv_upload(file: UploadFile = File(...), db: AsyncSession = De
         }
         
     except Exception as e:
+        logger.error(f"CSV Upload Failed: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"CSV processing failed: {str(e)}")
 
 @app.get("/providers")

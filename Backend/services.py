@@ -82,21 +82,39 @@ class ValidationService:
                 return (intersection / union) * 100
 
             # Prepare comparisons
-            input_name = f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or data.get("organization_name", "")
+            input_first = data.get('first_name') or data.get('fname') or ''
+            input_last = data.get('last_name') or data.get('lname') or ''
+            input_name = f"{input_first} {input_last}".strip() or data.get("organization_name", "")
+
             npi_name = f"{npi_info.get('first_name', '')} {npi_info.get('last_name', '')}".strip()
             if not npi_name.strip(): npi_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name", "")
 
             name_score = calculate_similarity(input_name, npi_name)
             
             # Address construction
-            input_addr = f"{data.get('locations', [{}])[0].get('street_address_1', '')} {data.get('locations', [{}])[0].get('city', '')}"
+            # Address construction
+            # Handle both nested 'locations' (JSON/API) and flat structure (CSV)
+            locations_data = data.get('locations')
+            if locations_data and isinstance(locations_data, list) and len(locations_data) > 0:
+                input_addr_1 = locations_data[0].get('street_address_1', '')
+                input_city = locations_data[0].get('city', '')
+            else:
+                # Fallback for CSV flat structure
+                # Check multiple common keys
+                input_addr_1 = data.get('addr1') or data.get('address_line1') or data.get('street_address_1') or ''
+                input_city = data.get('city') or ''
+            
+            input_addr = f"{input_addr_1} {input_city}"
+            
             npi_addr_dict = npi_info.get("primary_practice_address", {})
             npi_addr = f"{npi_addr_dict.get('address_1', '')} {npi_addr_dict.get('city', '')}"
             
             addr_score = calculate_jaccard(input_addr, npi_addr)
             
             # Phone verification (Exact match on last 10 digits)
-            input_phone = "".join(filter(str.isdigit, str(data.get("phone") or "")))
+            # Handle 'phone' or 'telephone_number' from CSV/API
+            raw_phone = data.get("phone") or data.get("telephone_number") or ""
+            input_phone = "".join(filter(str.isdigit, str(raw_phone)))
             npi_phone = "".join(filter(str.isdigit, str(npi_addr_dict.get("telephone_number") or "")))
             phone_match = (input_phone[-10:] == npi_phone[-10:]) and len(input_phone) >= 10
             
