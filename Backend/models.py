@@ -1,4 +1,5 @@
-from sqlalchemy import String, Float, Text, JSON, DateTime, Integer, Boolean, ARRAY, ForeignKey
+from sqlalchemy import String, Float, Text, JSON, DateTime, Integer, Boolean, ForeignKey
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime
 from uuid import uuid4
@@ -109,6 +110,10 @@ class ProviderMeta(Base):
     manual_review_required: Mapped[bool] = mapped_column(Boolean, default=False)
     confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
     data_quality_flags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+
+    # Verification Token for Email Agent
+    verification_token: Mapped[str] = mapped_column(String, nullable=True, unique=True)
+    token_expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     # We can store the raw payload here or in a separate raw_data column if needed, 
     # but the prompt didn't specify it in this table. 
