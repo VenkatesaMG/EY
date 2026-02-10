@@ -49,6 +49,7 @@ def lookup_npi(npi_number: str, pretty: bool = False) -> dict | None:
         "status": basic.get("status"),
         "first_name": basic.get("first_name"),
         "last_name": basic.get("last_name"),
+        "sex" : basic.get("sex"),
         "credential": basic.get("credential"),
         "sole_proprietor": basic.get("sole_proprietor"),
         "gender": basic.get("gender"),
@@ -80,14 +81,14 @@ def lookup_npi(npi_number: str, pretty: bool = False) -> dict | None:
 
 
 
-if __name__ == "__main__":
-    test_npi = "1891106191"  # replace with a real NPI for local testing
-    result = lookup_npi(test_npi)
-    if result is None:
-        print("No provider found for that NPI")
-    else:
-        print(f"NPI: {result['npi']}")
-        print(result)
+# if __name__ == "__main__":
+#     test_npi = "1891106191"  # replace with a real NPI for local testing
+#     result = lookup_npi(test_npi)
+#     if result is None:
+#         print("No provider found for that NPI")
+#     else:
+#         print(f"NPI: {result['npi']}")
+#         print(result)
         # print(f"Name: {result['first_name']} {result['last_name']}")
         # print(f"Primary taxonomy: {result['primary_taxonomy']}")
         # print(f"Primary practice city/state: "

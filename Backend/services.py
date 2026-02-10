@@ -8,48 +8,55 @@ from Validation.gemini_compare import compare_row_with_npi_gemini
 from Agents.enrichment_agent_v0 import EnrichmentManager
 import json
 import logging
+from fastapi import Depends
+from database import get_db, AsyncSessionLocal
+import asyncio
 
 # Setup logger
 logger = logging.getLogger("HealthValidator")
 
 class ValidationService:
     @staticmethod
-    async def process_submission(submission: RawProviderSubmission, db: AsyncSession):
-        """
-        Process a raw submission:
-        1. Access NPI API (if not already done).
-        2. Validate/Compare using Gemini.
-        3. Upsert to Golden Record tables if confidence is sufficient.
-        """
-        logger.info(f"📥 Processing Submission #{submission.submission_id} | NPI: {submission.npi}")
-        
-        data = submission.input_payload or {}
-        npi_val = submission.npi
-        
-        # 1. NPI Lookup
-        npi_info = None
-        if not npi_val:
-            submission.processing_status = "failed"
-            submission.error_message = "Missing NPI"
-            await db.commit()
-            return
-        
-        # Update status to show NPI lookup in progress
-        submission.processing_status = "npi_lookup"
-        await db.commit()
-        logger.info(f"🔍 Step 1: NPI Registry Lookup for {npi_val}")
+    async def process_submission(submission_id: int):
+        async with AsyncSessionLocal() as db:
+            submission = await db.get(RawProviderSubmission, submission_id)
+
+            """
+            Process a raw submission:
+            1. Access NPI API (if not already done).
+            2. Validate/Compare using Gemini.
+            3. Upsert to Golden Record if confidence is sufficient.
+            """
+
+            logger.info(f"📥 Processing Submission #{submission.submission_id} | NPI: {submission.npi}")
             
-        try:
-            npi_info = lookup_npi(npi_val)
-            submission.npi_api_response = npi_info
-            await db.commit()  # Save NPI response immediately
-            logger.info(f"✅ NPI Lookup Complete")
-        except Exception as e:
-            logger.error(f"❌ NPI Lookup Failed: {e}")
-            submission.processing_status = "failed"
-            submission.error_message = f"NPI API Error: {str(e)}"
+            data = submission.input_payload or {}
+            npi_val = submission.npi
+            
+            # 1. NPI Lookup
+            npi_info = None
+            if not npi_val:
+                submission.processing_status = "failed"
+                submission.error_message = "Missing NPI"
+                await db.commit()
+                return
+            
+            # Update status to show NPI lookup in progress
+            submission.processing_status = "npi_lookup"
             await db.commit()
-            return # Retry later?
+            logger.info(f"🔍 Step 1: NPI Registry Lookup for {npi_val}")
+                
+            try:
+                npi_info = lookup_npi(npi_val)
+                submission.npi_api_response = npi_info
+                await db.commit()  # Save NPI response immediately
+                logger.info(f"✅ NPI Lookup Complete")
+            except Exception as e:
+                logger.error(f"❌ NPI Lookup Failed: {e}")
+                submission.processing_status = "failed"
+                submission.error_message = f"NPI API Error: {str(e)}"
+                await db.commit()
+                return # Retry later?
 
         if not npi_info:
             submission.processing_status = "rejected_invalid_npi"
@@ -260,11 +267,10 @@ class ValidationService:
             # Trigger Enrichment only if we strictly need it AND not purely for correction
             # If manual review is needed, enrichment might help clarify
             if manual_review and not flags: # If no specific flags but low score?
-                pass 
+                pass
             elif manual_review and "name_mismatch" in flags:
                 # Name mismatch shouldn't trigger auto-enrichment usually as it might be wrong person
                 pass
-
             
         except Exception as e:
             logger.error(f"❌ Validation Error: {e}")
@@ -272,93 +278,127 @@ class ValidationService:
             submission.error_message = str(e)
             await db.commit()
 
+def extract_json_block(text: str):
+    import re, json
+    block = re.search(r"\{.*\}", text, re.DOTALL)
+    if block:
+        return json.loads(block.group(0))
+    raise ValueError("No JSON found")
 
 class EnrichmentService:
+
     @staticmethod
-    async def enrich_provider(provider: ProviderPersonal, submission: RawProviderSubmission, db: AsyncSession):
-        """
-        Scrapes web to find missing fields for the provider.
-        """
-        # Ensure relations are loaded if passed from elsewhere
-        # (In process_submission they are loaded, but let's be safe if possible, though async attributes are tricky)
-        # We assume they are loaded.
-        
-        logger.info(f"🔍 Enriching Provider: {provider.display_name} (NPI: {provider.npi})")
-        
-        # Identify missing critical fields
-        missing_keys = []
-        if not provider.phone: missing_keys.append("phone")
-        
-        # Check professional address
-        if not provider.professional.address_line1: missing_keys.append("practice_address")
-        if not provider.professional.website: missing_keys.append("website")
-        
-        if not missing_keys:
-            logger.info("✅ No missing fields. Skipping enrichment.")
-            submission.processing_status = "processed"
-            await db.commit()
-            return
+    async def enrich_provider(submission_id: int):
 
-        # Prepare partial profile for the agent
-        partial_profile = {
-            "first_name": provider.first_name,
-            "last_name": provider.last_name,
-            "credential": provider.professional.taxonomy_code, 
-            "city": provider.city,
-            "state": provider.state,
-            "npi": provider.npi
-        }
+        print("Starting Enrichment...")
 
-        try:
-            manager = EnrichmentManager()
-            result = manager.enrich_profile(partial_profile)
-            
-            # Parse result if string
-            if isinstance(result, str):
-                try: 
-                    if "```json" in result:
-                        import re
-                        match = re.search(r"```json\s*(\{.*?\})\s*```", result, re.DOTALL)
-                        if match:
-                            result = json.loads(match.group(1))
-                    else:
-                        result = json.loads(result)
-                except:
-                    logger.warning("⚠️  Could not parse Agent output as JSON")
-                    submission.processing_status = "processed"
-                    await db.commit()
-                    return
+        async with AsyncSessionLocal() as db:
 
-            # Update provider with found data
-            if isinstance(result, dict):
-                updated = False
+            submission = await db.get(RawProviderSubmission, submission_id)
+            if not submission:
+                logger.error("Submission not found")
+                return
+
+            provider = provider = await db.scalar(
+    select(ProviderPersonal)
+    .options(
+        selectinload(ProviderPersonal.professional),
+        selectinload(ProviderPersonal.meta),
+    )
+    .where(ProviderPersonal.npi == submission.npi)
+)
+
+            provider_prof = await db.scalar(
+                select(ProviderProfessional)
+                .where(ProviderProfessional.npi == submission.npi)
+            )
+
+            if not provider or not provider_prof:
+                logger.warning("Provider records incomplete — skipping")
+                submission.processing_status = "processed"
+                await db.commit()
+                return
+
+            logger.info(f"🔍 Enriching Provider: {provider.display_name}")
+
+            # ---- detect missing ----
+
+            missing_keys = []
+
+            if not provider.phone:
+                missing_keys.append("phone")
+
+            if not provider_prof.address_line1:
+                missing_keys.append("practice_address")
+
+            if not provider_prof.website:
+                missing_keys.append("website")
+
+            if not missing_keys:
+                submission.processing_status = "processed"
+                await db.commit()
+                return
+
+            # ---- build profile ----
+
+            partial_profile = {
+                "first_name": provider.first_name,
+                "last_name": provider.last_name,
+                "credential": provider_prof.taxonomy_code,
+                "city": provider.city,
+                "state": provider.state,
+                "npi": provider.npi,
+                "missing_fields": missing_keys
+            }
+
+            try:
+
+                manager = EnrichmentManager()
+
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    manager.enrich_profile,
+                    partial_profile
+                )
+
+                # ---- parse agent output ----
+
+                if isinstance(result, str):
+                    result = extract_json_block(result)
+
+                if not isinstance(result, dict):
+                    raise ValueError("Agent returned non-dict")
+
+                # ---- apply updates ----
+
                 if result.get("phone") and not provider.phone:
-                    provider.phone = result.get("phone")
-                    updated = True
-                
-                if result.get("website") and not provider.professional.website:
-                    provider.professional.website = result.get("website")
-                    updated = True
-                
-                if result.get("practice_address") and not provider.professional.address_line1:
-                    provider.professional.address_line1 = result.get("practice_address")
-                    updated = True
-                
-                if result.get("address_line1") and not provider.professional.address_line1:
-                     provider.professional.address_line1 = result.get("address_line1")
-                     updated = True
-                
-                if updated:
+                    provider.phone = result["phone"]
+
+                if result.get("website") and not provider_prof.website:
+                    provider_prof.website = result["website"]
+
+                if result.get("practice_address") and not provider_prof.address_line1:
+                    provider_prof.address_line1 = result["practice_address"]
+
+                if provider.meta:
                     provider.meta.status = "enriched"
-                    submission.processing_status = "enriched"
-                    logger.info("✅ Enrichment Complete")
-                else:
-                    submission.processing_status = "processed"
-                    logger.info("✅ Enrichment Complete (No new data)")
-                    
+                    provider.meta.last_verified = datetime.utcnow()
+
+                submission.processing_status = "enriched"
+
                 await db.commit()
 
-        except Exception as e:
-            logger.error(f"❌ Enrichment Error: {e}")
-            submission.processing_status = "processed"  
-            await db.commit()
+                logger.info("✅ Enrichment complete")
+
+            except Exception as e:
+                logger.exception("❌ Enrichment failed")
+
+                submission.processing_status = "processed"
+                await db.commit()
+
+class SubmissionPipeline:
+    @staticmethod
+    async def run(submission_id: int):
+        await ValidationService.process_submission(submission_id)
+        await EnrichmentService.enrich_provider(submission_id)

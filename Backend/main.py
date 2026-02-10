@@ -22,7 +22,7 @@ from sqlalchemy import func, desc
 from database import get_db, init_db
 from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission, MarketExpansionOpportunity
 from Agents.extractor_agent import HealthcareExtractionModel
-from services import ValidationService
+from services import ValidationService, SubmissionPipeline
 
 # Configure clean, readable logging
 logging.basicConfig(
@@ -42,7 +42,9 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -107,10 +109,10 @@ async def submit_provider(
         await db.commit()
         await db.refresh(submission)
         
+        print("Starting Background Task...")
         # Trigger validation in BACKGROUND
         # This allows immediate response to UI so it can start polling/visualizing
-        background_tasks.add_task(ValidationService.process_submission, submission, db)
-        
+        background_tasks.add_task(SubmissionPipeline.run, submission.submission_id)
         return {
             "message": "Submission queued", 
             "submission_id": submission.submission_id,

@@ -16,6 +16,7 @@ class ProviderPersonal(Base):
     # Granular components
     first_name: Mapped[str] = mapped_column(String, nullable=True) 
     last_name: Mapped[str] = mapped_column(String, nullable=True)
+    sex: Mapped[str] = mapped_column(String, nullable=True)
     
     # Contact Info
     phone: Mapped[str] = mapped_column(String, nullable=True)

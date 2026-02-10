@@ -89,7 +89,7 @@ available_functions = {
 
 class EnrichmentManager:
     def __init__(self):
-        self.model = "qwen2.5:7b"
+        self.model = "llama3.1:latest"
         self.system_prompt = """
         You are the **Lead Forensic Data Enrichment Agent** for a major Insurance Firm. 
     Your mission is to construct a **"Golden Record"** profile for the requested Provider (Individual or Organization) by searching, scraping, and fusing information from the web.
@@ -205,7 +205,7 @@ if __name__ == "__main__":
         print("--- Starting Deep Enrichment (Native Llama Mode) ---")
         final_response = manager.enrich_profile(
             partial_profile=incomplete_profile, 
-            missing_keys=["phone", "practice_address", "fax"]
+            missing_keys=["phone", "practice_address", "fax", "email"]
         )
         print("\n--- FINAL ENRICHED PROFILE ---")
         print(final_response)
