@@ -548,6 +548,9 @@ async def submit_verification_data(token: str, data: dict = Body(...), db: Async
     Overrides existing data and marks as Verified.
     """
     try:
+        logger.info(f"📝 Processing verification submission for token: {token}")
+        logger.info(f"📦 Received Payload: {data}")
+
         stmt = select(ProviderMeta).options(
             selectinload(ProviderMeta.personal).selectinload(ProviderPersonal.professional)
         ).filter(ProviderMeta.verification_token == token)
@@ -556,13 +559,22 @@ async def submit_verification_data(token: str, data: dict = Body(...), db: Async
         meta = result.scalars().first()
         
         if not meta:
+            logger.warning(f"❌ Invalid token: {token}")
             raise HTTPException(status_code=404, detail="Invalid token")
             
         if meta.token_expires_at and meta.token_expires_at < datetime.utcnow():
+            logger.warning(f"⏰ Token expired: {token}")
             raise HTTPException(status_code=400, detail="Token expired")
             
         p = meta.personal
         prof = p.professional
+        
+        if not prof:
+            logger.info(f"⚠️ ProviderProfessional missing for NPI {p.npi}. Creating new record.")
+            prof = ProviderProfessional(npi=p.npi)
+            db.add(prof)
+            # Ensure relationship is established
+            p.professional = prof
         
         # Update fields if provided
         # We explicitly trust the provider input here
@@ -604,13 +616,17 @@ async def submit_verification_data(token: str, data: dict = Body(...), db: Async
             meta.data_quality_flags = [f for f in meta.data_quality_flags if "mismatch" not in f]
         meta.data_quality_flags = (meta.data_quality_flags or []) + ["self_verified"]
 
+        logger.info(f"💾 Committing updates for NPI {p.npi}...")
         await db.commit()
+        logger.info("✅ Verification data committed successfully.")
         
         return {"success": True, "message": "Information verified successfully"}
 
     except Exception as e:
         await db.rollback()
         logger.error(f"Error submitting verification: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 
