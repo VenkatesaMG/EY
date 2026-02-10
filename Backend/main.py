@@ -3,6 +3,11 @@ import os
 import shutil
 from typing import List, Optional
 from uuid import uuid4
+import csv
+import io
+import codecs
+import logging
+import json
 
 # Add parent directory to path to allow importing from Agents
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
@@ -12,16 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func
-import csv
-import io
-import codecs
+from sqlalchemy import func, desc
 
 from database import get_db, init_db
-from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission
+from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission, MarketExpansionOpportunity
 from Agents.extractor_agent import HealthcareExtractionModel
-from services import ValidationService
-import logging
+from services import ValidationService, SubmissionPipeline
 
 # Configure clean, readable logging
 logging.basicConfig(
@@ -111,8 +112,7 @@ async def submit_provider(
         print("Starting Background Task...")
         # Trigger validation in BACKGROUND
         # This allows immediate response to UI so it can start polling/visualizing
-        background_tasks.add_task(ValidationService.process_submission, submission.submission_id)
-        
+        background_tasks.add_task(SubmissionPipeline.run, submission.submission_id)
         return {
             "message": "Submission queued", 
             "submission_id": submission.submission_id,
@@ -259,10 +259,10 @@ async def onboard_csv_upload(file: UploadFile = File(...), db: AsyncSession = De
 
 @app.get("/providers")
 async def list_providers(skip: int = 0, limit: int = 100, db: AsyncSession = Depends(get_db)):
-    stmt = select(ProviderPersonal).options(
+    stmt = select(ProviderPersonal).join(ProviderMeta).options(
         selectinload(ProviderPersonal.meta),
         selectinload(ProviderPersonal.professional)
-    ).limit(limit).offset(skip)
+    ).order_by(desc(ProviderMeta.created_at)).limit(limit).offset(skip)
     
     result = await db.execute(stmt)
     providers = result.scalars().all()

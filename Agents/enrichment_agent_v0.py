@@ -75,7 +75,7 @@ def scrape_webpage_direct(url: str):
 
 class EnrichmentManager:
     def __init__(self):
-        self.model = "llama3.1:latest"
+        self.model = "phi3:latest"
         
         self.system_prompt = """
         You are a Healthcare Data Structuring Engine. 

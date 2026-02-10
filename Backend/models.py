@@ -27,6 +27,9 @@ class ProviderPersonal(Base):
     state: Mapped[str] = mapped_column(String, nullable=True)
     postal_code: Mapped[str] = mapped_column(String, nullable=True)
     country: Mapped[str] = mapped_column(String, nullable=True)
+    
+    # Data Governance Sidecar
+    field_metadata: Mapped[dict] = mapped_column(JSON, default={}, nullable=True)
 
     # Relationships
     professional: Mapped["ProviderProfessional"] = relationship(back_populates="personal", uselist=False, cascade="all, delete-orphan")
@@ -63,6 +66,9 @@ class ProviderProfessional(Base):
     # Keeping these for backward compatibility/ease of access if needed, or derived from taxonomies
     taxonomy_code: Mapped[str] = mapped_column(String, nullable=True) 
     specialties: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
+    
+    # Data Governance Sidecar
+    field_metadata: Mapped[dict] = mapped_column(JSON, default={}, nullable=True)
 
     # Relationship
     personal: Mapped["ProviderPersonal"] = relationship(back_populates="professional")
@@ -98,6 +104,11 @@ class ProviderMeta(Base):
     last_verified: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     overall_confidence: Mapped[float] = mapped_column(Float, nullable=True)
     status: Mapped[str] = mapped_column(String, default="needs_review") 
+    
+    # Data Governance Flags
+    manual_review_required: Mapped[bool] = mapped_column(Boolean, default=False)
+    confidence_score: Mapped[float] = mapped_column(Float, default=0.0)
+    data_quality_flags: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=True)
 
     # We can store the raw payload here or in a separate raw_data column if needed, 
     # but the prompt didn't specify it in this table. 

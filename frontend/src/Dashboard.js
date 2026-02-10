@@ -14,7 +14,8 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
     const fetchProviders = async (isRefresh = false) => {
         if (isRefresh) setRefreshing(true);
         try {
-            const response = await fetch('http://localhost:8000/providers');
+            // Fetch more providers to show the batch processing visually
+            const response = await fetch('http://localhost:8000/providers?limit=200');
             if (!response.ok) throw new Error('Failed to fetch providers');
             const data = await response.json();
             setProviders(data);
@@ -30,7 +31,7 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
 
     useEffect(() => {
         fetchProviders();
-        const interval = setInterval(() => fetchProviders(), 5000);
+        const interval = setInterval(() => fetchProviders(), 3000); // Polling faster for visual effect
         return () => clearInterval(interval);
     }, []);
 
@@ -53,7 +54,6 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
             }
             const data = await response.json();
             alert(`Successfully added ${data.count} mock providers!`);
-            // Wait a bit for database to commit, then refresh
             setTimeout(() => {
                 fetchProviders(true);
             }, 500);
@@ -81,6 +81,18 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
             setVerifyingEmail(null);
         }
     };
+
+    // Filter Logic
+    const needsReviewProviders = providers.filter(p => {
+        const score = p.overall_confidence || 0;
+        return p.status === 'needs_review' || score < 60 || p.status === 'pending';
+    });
+
+    const verifiedProviders = providers.filter(p => {
+        const score = p.overall_confidence || 0;
+        // Verified if status is verified/enriched OR score is high (and not explicitly flagged for review)
+        return (p.status === 'verified' || p.status === 'enriched' || score >= 60) && p.status !== 'needs_review' && p.status !== 'pending';
+    });
 
     // Loading State
     if (loading && providers.length === 0) {
@@ -128,6 +140,82 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
         );
     }
 
+    const renderTable = (data, emptyMessage) => (
+        <>
+            {data.length === 0 ? (
+                <div style={{
+                    padding: '2rem',
+                    textAlign: 'center',
+                    background: 'hsl(var(--card))',
+                    borderRadius: '12px',
+                    border: '1px dashed hsl(var(--border))',
+                    color: 'hsl(var(--muted-foreground))'
+                }}>
+                    {emptyMessage}
+                </div>
+            ) : (
+                <div className="provider-table-container">
+                    <table className="provider-table">
+                        <thead>
+                            <tr>
+                                <th>Status</th>
+                                <th>Name</th>
+                                <th style={{ width: '80px' }}>Score</th>
+                                <th style={{ textAlign: 'right' }}>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <AnimatePresence>
+                                {data.map((p, index) => (
+                                    <motion.tr
+                                        key={p.provider_id}
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        exit={{ opacity: 0 }}
+                                        transition={{ delay: index * 0.03 }}
+                                    >
+                                        <td>
+                                            <span className={`badge ${p.status}`}>
+                                                {p.status === 'needs_review' ? 'Review' : (p.status || 'Pending')}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <div style={{ fontWeight: 500, fontSize: '0.9rem' }}>
+                                                {p.display_name || 'Unknown'}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', color: 'hsl(228, 8%, 55%)' }}>
+                                                {p.npi}
+                                            </div>
+                                        </td>
+                                        <td>
+                                            {p.overall_confidence ? (
+                                                <div style={{
+                                                    fontWeight: '600',
+                                                    color: p.overall_confidence >= 80 ? 'hsl(var(--success))' :
+                                                        p.overall_confidence >= 60 ? 'hsl(var(--warning))' : 'hsl(var(--error))'
+                                                }}>
+                                                    {Math.round(p.overall_confidence)}%
+                                                </div>
+                                            ) : '-'}
+                                        </td>
+                                        <td style={{ textAlign: 'right' }}>
+                                            <button
+                                                onClick={() => onSelectProvider(p.provider_id)}
+                                                style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
+                                            >
+                                                <ChevronRight size={14} />
+                                            </button>
+                                        </td>
+                                    </motion.tr>
+                                ))}
+                            </AnimatePresence>
+                        </tbody>
+                    </table>
+                </div>
+            )}
+        </>
+    );
+
     return (
         <div className="dashboard">
             {/* Header */}
@@ -138,243 +226,86 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                 marginBottom: '2rem'
             }}>
                 <div>
-                    <h2 style={{ marginBottom: '0.5rem' }}>Onboarded Stakeholders</h2>
+                    <h2 style={{ marginBottom: '0.5rem' }}>Pipeline Monitor</h2>
                     <p style={{ color: 'hsl(228, 8%, 55%)', fontSize: '0.9375rem', margin: 0 }}>
-                        {providers.length} provider{providers.length !== 1 ? 's' : ''} in the system
+                        Real-time verification status of {providers.length} providers
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <button
-                        onClick={handleSeedMockData}
-                        className="submit-btn"
-                        disabled={seedLoading}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            padding: '0.5rem 1rem',
-                            background: 'hsl(160, 84%, 39%)',
-                            color: 'white'
-                        }}
-                    >
-                        {seedLoading ? (
-                            <>
-                                <Loader2 size={16} className="spin" />
-                                Seeding...
-                            </>
-                        ) : (
-                            <>
-                                <Users size={16} />
-                                Load Mock Data
-                            </>
-                        )}
+                    <button onClick={handleSeedMockData} className="submit-btn" disabled={seedLoading} style={{ width: 'auto', padding: '0.5rem 1rem', background: 'hsl(160, 84%, 39%)' }}>
+                        {seedLoading ? <Loader2 size={16} className="spin" /> : <Users size={16} />}
+                        <span style={{ marginLeft: '0.5rem' }}>Seed Data</span>
                     </button>
                     {onNavigateToAnalysis && (
-                        <button
-                            onClick={onNavigateToAnalysis}
-                            className="submit-btn"
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '0.5rem',
-                                padding: '0.5rem 1rem',
-                                background: 'hsl(217, 91%, 60%)',
-                                color: 'white'
-                            }}
-                        >
-                            <Map size={16} />
-                            View Analysis
-                            <ArrowRight size={14} />
+                        <button onClick={onNavigateToAnalysis} className="submit-btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'hsl(217, 91%, 60%)' }}>
+                            <Map size={16} /><span style={{ marginLeft: '0.5rem' }}>Analysis</span>
                         </button>
                     )}
-                    <button
-                        onClick={handleRefresh}
-                        className="submit-btn secondary"
-                        disabled={refreshing}
-                        style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '0.5rem',
-                            padding: '0.5rem 1rem'
-                        }}
-                    >
+                    <button onClick={handleRefresh} className="submit-btn secondary" disabled={refreshing}>
                         <RefreshCw size={16} className={refreshing ? 'spin' : ''} />
-                        {refreshing ? 'Refreshing...' : 'Refresh'}
                     </button>
                 </div>
             </div>
 
-            {/* Empty State */}
-            {providers.length === 0 ? (
-                <motion.div
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="empty-state"
-                >
-                    <div style={{
-                        width: '80px',
-                        height: '80px',
-                        margin: '0 auto 1.5rem',
-                        background: 'hsla(217, 91%, 60%, 0.1)',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                    }}>
-                        <Users size={36} color="hsl(217, 91%, 60%)" />
+            <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: '2rem' }}>
+                {/* Needs Review Section */}
+                <div style={{
+                    background: 'hsla(43, 96%, 56%, 0.05)',
+                    border: '1px solid hsla(43, 96%, 56%, 0.2)',
+                    borderRadius: '16px',
+                    padding: '1.5rem',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                        <div style={{
+                            background: 'hsla(43, 96%, 56%, 0.2)',
+                            padding: '0.5rem',
+                            borderRadius: '8px',
+                            color: 'hsl(var(--warning))'
+                        }}>
+                            <AlertCircle size={20} />
+                        </div>
+                        <div>
+                            <h3 style={{ fontSize: '1.125rem', marginBottom: '0.25rem' }}>Needs Review</h3>
+                            <p style={{ fontSize: '0.8125rem', color: 'hsl(var(--muted-foreground))' }}>Low confidence or flagged</p>
+                        </div>
+                        <div style={{ marginLeft: 'auto', fontWeight: 'bold', color: 'hsl(var(--warning))' }}>
+                            {needsReviewProviders.length}
+                        </div>
                     </div>
-                    <h3>No Providers Yet</h3>
-                    <p style={{ maxWidth: '400px', margin: '0.5rem auto 0' }}>
-                        Start by onboarding your first healthcare provider. Use the "Onboard New" tab to get started.
-                    </p>
-                </motion.div>
-            ) : (
-                /* Provider Table */
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ duration: 0.3 }}
-                >
-                    <table className="provider-table">
-                        <thead>
-                            <tr>
-                                <th>Status</th>
-                                <th>NPI</th>
-                                <th>Name</th>
-                                <th>Type</th>
-                                <th>Confidence</th>
-                                <th>Email</th>
-                                <th style={{ textAlign: 'right' }}>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            <AnimatePresence>
-                                {providers.map((p, index) => (
-                                    <motion.tr
-                                        key={p.provider_id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        exit={{ opacity: 0, y: -10 }}
-                                        transition={{ delay: index * 0.05 }}
-                                    >
-                                        <td>
-                                            <span className={`badge ${p.status}`}>
-                                                {p.status?.replace('_', ' ') || 'pending'}
-                                            </span>
-                                        </td>
-                                        <td style={{ fontFamily: "'SF Mono', 'Fira Code', monospace", fontSize: '0.875rem' }}>
-                                            {p.npi || '—'}
-                                        </td>
-                                        <td>
-                                            <div style={{ fontWeight: 500 }}>
-                                                {p.display_name || 'Unknown'}
-                                            </div>
-                                            {p.practice_name && (
-                                                <div style={{
-                                                    fontSize: '0.8125rem',
-                                                    color: 'hsl(228, 8%, 55%)',
-                                                    marginTop: '0.125rem'
-                                                }}>
-                                                    {p.practice_name}
-                                                </div>
-                                            )}
-                                        </td>
-                                        <td>
-                                            <span style={{
-                                                fontSize: '0.8125rem',
-                                                color: 'hsl(228, 8%, 55%)'
-                                            }}>
-                                                {p.practice_name ? 'Organization' : 'Individual'}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            {p.overall_confidence ? (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                    <div style={{
-                                                        width: '60px',
-                                                        height: '6px',
-                                                        background: 'hsl(228, 12%, 18%)',
-                                                        borderRadius: '3px',
-                                                        overflow: 'hidden'
-                                                    }}>
-                                                        <div style={{
-                                                            width: `${p.overall_confidence}%`,
-                                                            height: '100%',
-                                                            background: p.overall_confidence >= 80
-                                                                ? 'hsl(160, 84%, 39%)'
-                                                                : p.overall_confidence >= 60
-                                                                    ? 'hsl(43, 96%, 56%)'
-                                                                    : 'hsl(0, 72%, 51%)',
-                                                            borderRadius: '3px',
-                                                            transition: 'width 0.5s ease'
-                                                        }} />
-                                                    </div>
-                                                    <span style={{ fontSize: '0.8125rem', color: 'hsl(228, 8%, 55%)' }}>
-                                                        {p.overall_confidence}%
-                                                    </span>
-                                                </div>
-                                            ) : (
-                                                <span style={{ color: 'hsl(228, 8%, 40%)' }}>—</span>
-                                            )}
-                                        </td>
-                                        <td>
-                                            {p.email ? (
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                    <span style={{ fontSize: '0.8125rem', color: 'hsl(228, 8%, 55%)' }}>
-                                                        {p.email}
-                                                    </span>
-                                                    <button
-                                                        onClick={() => handleVerifyEmail(p.provider_id)}
-                                                        disabled={verifyingEmail === p.provider_id}
-                                                        style={{
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            gap: '0.25rem',
-                                                            padding: '0.25rem 0.5rem',
-                                                            background: 'hsl(217, 91%, 60%)',
-                                                            border: 'none',
-                                                            borderRadius: '4px',
-                                                            color: 'white',
-                                                            fontSize: '0.75rem',
-                                                            cursor: verifyingEmail === p.provider_id ? 'not-allowed' : 'pointer',
-                                                            opacity: verifyingEmail === p.provider_id ? 0.6 : 1
-                                                        }}
-                                                        title="Send verification email"
-                                                    >
-                                                        {verifyingEmail === p.provider_id ? (
-                                                            <Loader2 size={12} className="spin" />
-                                                        ) : (
-                                                            <Mail size={12} />
-                                                        )}
-                                                        Verify
-                                                    </button>
-                                                </div>
-                                            ) : (
-                                                <span style={{ color: 'hsl(228, 8%, 40%)', fontSize: '0.8125rem' }}>No email</span>
-                                            )}
-                                        </td>
-                                        <td style={{ textAlign: 'right' }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'flex-end' }}>
-                                                <button
-                                                    onClick={() => onSelectProvider(p.provider_id)}
-                                                    style={{
-                                                        display: 'inline-flex',
-                                                        alignItems: 'center',
-                                                        gap: '0.25rem'
-                                                    }}
-                                                >
-                                                    View Details
-                                                    <ChevronRight size={14} />
-                                                </button>
-                                            </div>
-                                        </td>
-                                    </motion.tr>
-                                ))}
-                            </AnimatePresence>
-                        </tbody>
-                    </table>
-                </motion.div>
-            )}
+                    {renderTable(needsReviewProviders, "No items pending review.")}
+                </div>
+
+                {/* Verified Section */}
+                <div style={{
+                    background: 'hsla(160, 84%, 39%, 0.05)',
+                    border: '1px solid hsla(160, 84%, 39%, 0.2)',
+                    borderRadius: '16px',
+                    padding: '1.5rem',
+                    display: 'flex',
+                    flexDirection: 'column'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                        <div style={{
+                            background: 'hsla(160, 84%, 39%, 0.2)',
+                            padding: '0.5rem',
+                            borderRadius: '8px',
+                            color: 'hsl(var(--success))'
+                        }}>
+                            <CheckCircle size={20} />
+                        </div>
+                        <div>
+                            <h3 style={{ fontSize: '1.125rem', marginBottom: '0.25rem' }}>Verified</h3>
+                            <p style={{ fontSize: '0.8125rem', color: 'hsl(var(--muted-foreground))' }}>Processed successfully</p>
+                        </div>
+                        <div style={{ marginLeft: 'auto', fontWeight: 'bold', color: 'hsl(var(--success))' }}>
+                            {verifiedProviders.length}
+                        </div>
+                    </div>
+                    {renderTable(verifiedProviders, "No verified providers yet.")}
+                </div>
+            </div>
         </div>
     );
 };

@@ -10,7 +10,8 @@ CREATE TABLE providers_master_per (
     city VARCHAR,
     state VARCHAR,
     postal_code VARCHAR,
-    country VARCHAR
+    country VARCHAR,
+    field_metadata JSONB DEFAULT '{}'::jsonb
 );
 -- 2. Table: providers_master_prof (Professional Info)
 CREATE TABLE providers_master_prof (
@@ -28,7 +29,8 @@ CREATE TABLE providers_master_prof (
     country VARCHAR,
     taxonomies JSONB, -- Storing list of dicts as JSONB
     taxonomy_code VARCHAR,
-    specialties VARCHAR[]
+    specialties VARCHAR[],
+    field_metadata JSONB DEFAULT '{}'::jsonb
 );
 -- 3. Table: providers_master_meta (Validation Metadata)
 CREATE TABLE providers_master_meta (
@@ -50,6 +52,9 @@ CREATE TABLE providers_master_meta (
     overall_confidence FLOAT,
     status VARCHAR DEFAULT 'needs_review',
     raw_data_json JSONB,
+    manual_review_required BOOLEAN DEFAULT FALSE,
+    confidence_score FLOAT DEFAULT 0.0,
+    data_quality_flags VARCHAR[],
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
