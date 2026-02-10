@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Sparkles, MapPin, Maximize, Minimize } from 'lucide-react';
 import {
@@ -55,6 +55,10 @@ const USMapAnalysis = () => {
     const [analysisResult, setAnalysisResult] = useState(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
 
+    // Filter State
+    const [specialties, setSpecialties] = useState([]);
+    const [selectedSpecialty, setSelectedSpecialty] = useState("");
+
     // UI State
     const [showAnalysisPanel, setShowAnalysisPanel] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -62,11 +66,23 @@ const USMapAnalysis = () => {
     // Real Data State
     const [stateStats, setStateStats] = useState({});
 
-    // Fetch Real Data on Mount
+    // Fetch Specialties
+    useEffect(() => {
+        fetch('http://localhost:8000/analytics/specialties')
+            .then(res => res.json())
+            .then(data => setSpecialties(data))
+            .catch(err => console.error("Failed to load specialties", err));
+    }, []);
+
+    // Fetch Real Data
     React.useEffect(() => {
         const fetchData = async () => {
             try {
-                const res = await fetch('http://localhost:8000/analytics/geo-distribution');
+                const url = selectedSpecialty
+                    ? `http://localhost:8000/analytics/geo-distribution?specialty=${encodeURIComponent(selectedSpecialty)}`
+                    : 'http://localhost:8000/analytics/geo-distribution';
+
+                const res = await fetch(url);
                 const counts = await res.json();
 
                 // Merge with static metadata
@@ -88,7 +104,7 @@ const USMapAnalysis = () => {
 
         const interval = setInterval(fetchData, 5000);
         return () => clearInterval(interval);
-    }, []);
+    }, [selectedSpecialty]);
 
     // Handle Fullscreen changes
     React.useEffect(() => {
@@ -175,7 +191,8 @@ const USMapAnalysis = () => {
                 totalStates: activeStates.length,
                 totalSubmissions: activeStates.reduce((acc, curr) => acc + curr.submissions, 0),
                 totalProviders: activeStates.reduce((acc, curr) => acc + curr.submissions, 0),
-                topStates: activeStates.slice(0, 5)
+                topStates: activeStates.slice(0, 5),
+                filter: selectedSpecialty || "All Specialties"
             };
 
             const res = await fetch('http://localhost:8000/analyze/map-data', {
@@ -238,10 +255,38 @@ const USMapAnalysis = () => {
             } : {}}
         >
             <div className="analysis-header" style={isFullscreen ? { display: 'none' } : {}}>
-                <h3>Geographic Analysis</h3>
-                <p style={{ color: 'hsl(228, 8%, 55%)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
-                    Provider submissions and distribution across US states
-                </p>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', flexWrap: 'wrap', gap: '1rem' }}>
+                    <div>
+                        <h3>Geographic Analysis</h3>
+                        <p style={{ color: 'hsl(228, 8%, 55%)', fontSize: '0.875rem', marginTop: '0.5rem' }}>
+                            Provider submissions and distribution across US states
+                        </p>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                        <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>Filter by Department/Specialty</label>
+                        <select
+                            value={selectedSpecialty}
+                            onChange={(e) => setSelectedSpecialty(e.target.value)}
+                            style={{
+                                background: 'hsl(228, 12%, 18%)',
+                                border: '1px solid hsl(228, 12%, 25%)',
+                                color: 'white',
+                                padding: '0.5rem 0.75rem',
+                                borderRadius: '6px',
+                                fontSize: '0.875rem',
+                                minWidth: '200px',
+                                cursor: 'pointer',
+                                outline: 'none'
+                            }}
+                        >
+                            <option value="">All Specialties</option>
+                            {specialties.map(s => (
+                                <option key={s} value={s}>{s}</option>
+                            ))}
+                        </select>
+                    </div>
+                </div>
             </div>
 
             {/* Layout Wrapper: Full or Split */}

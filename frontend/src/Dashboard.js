@@ -140,16 +140,16 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
         );
     }
 
-    const renderTable = (data, emptyMessage) => (
+    const renderTable = (data, emptyMessage, isVerified = false) => (
         <>
             {data.length === 0 ? (
                 <div style={{
                     padding: '2rem',
                     textAlign: 'center',
-                    background: 'hsl(var(--card))',
+                    background: 'hsla(0, 0%, 100%, 0.02)',
                     borderRadius: '12px',
-                    border: '1px dashed hsl(var(--border))',
-                    color: 'hsl(var(--muted-foreground))'
+                    border: '1px dashed hsl(228, 12%, 18%)',
+                    color: 'hsl(228, 8%, 55%)'
                 }}>
                     {emptyMessage}
                 </div>
@@ -175,8 +175,10 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                                         transition={{ delay: index * 0.03 }}
                                     >
                                         <td>
-                                            <span className={`badge ${p.status}`}>
-                                                {p.status === 'needs_review' ? 'Review' : (p.status || 'Pending')}
+                                            <span className={`badge ${p.status === 'verified_by_provider' ? 'verified' : p.status}`}>
+                                                {p.status === 'needs_review' ? 'Review' :
+                                                    p.status === 'verified_by_provider' ? 'Self-Verified' :
+                                                        (p.status || 'Pending')}
                                             </span>
                                         </td>
                                         <td>
@@ -188,17 +190,37 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                                             </div>
                                         </td>
                                         <td>
-                                            {p.overall_confidence ? (
-                                                <div style={{
-                                                    fontWeight: '600',
-                                                    color: p.overall_confidence >= 80 ? 'hsl(var(--success))' :
-                                                        p.overall_confidence >= 60 ? 'hsl(var(--warning))' : 'hsl(var(--error))'
-                                                }}>
-                                                    {Math.round(p.overall_confidence)}%
-                                                </div>
-                                            ) : '-'}
+                                            {p.status === 'verified_by_provider' ? (
+                                                <div style={{ fontWeight: '600', color: 'hsl(var(--success))' }}>100%</div>
+                                            ) : (
+                                                p.overall_confidence ? (
+                                                    <div style={{
+                                                        fontWeight: '600',
+                                                        color: p.overall_confidence >= 80 ? 'hsl(var(--success))' :
+                                                            p.overall_confidence >= 60 ? 'hsl(var(--warning))' : 'hsl(var(--error))'
+                                                    }}>
+                                                        {Math.round(p.overall_confidence)}%
+                                                    </div>
+                                                ) : '-'
+                                            )}
                                         </td>
-                                        <td style={{ textAlign: 'right' }}>
+                                        <td style={{ textAlign: 'right', display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                                            {!isVerified && (
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); handleVerifyEmail(p.npi); }}
+                                                    style={{
+                                                        padding: '0.35rem',
+                                                        background: 'hsl(228, 12%, 18%)',
+                                                        border: '1px solid hsl(228, 12%, 25%)',
+                                                        color: verifyingEmail === p.npi ? 'hsl(var(--warning))' : 'white',
+                                                        cursor: verifyingEmail === p.npi ? 'not-allowed' : 'pointer'
+                                                    }}
+                                                    title="Send Verification Email"
+                                                    disabled={verifyingEmail === p.npi}
+                                                >
+                                                    {verifyingEmail === p.npi ? <Loader2 size={14} className="spin" /> : <Mail size={14} />}
+                                                </button>
+                                            )}
                                             <button
                                                 onClick={() => onSelectProvider(p.provider_id)}
                                                 style={{ padding: '0.25rem 0.5rem', fontSize: '0.75rem' }}
@@ -254,25 +276,52 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                     border: '1px solid hsla(43, 96%, 56%, 0.2)',
                     borderRadius: '16px',
                     padding: '1.5rem',
+                    flex: 1,
                     display: 'flex',
                     flexDirection: 'column'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '1.5rem' }}>
-                        <div style={{
-                            background: 'hsla(43, 96%, 56%, 0.2)',
-                            padding: '0.5rem',
-                            borderRadius: '8px',
-                            color: 'hsl(var(--warning))'
-                        }}>
-                            <AlertCircle size={20} />
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '1.5rem', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                            <div style={{
+                                background: 'hsla(43, 96%, 56%, 0.2)',
+                                padding: '0.5rem',
+                                borderRadius: '8px',
+                                color: 'hsl(var(--warning))'
+                            }}>
+                                <AlertCircle size={20} />
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: '1.125rem', marginBottom: '0.25rem' }}>Needs Review</h3>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <p style={{ fontSize: '0.8125rem', color: 'hsl(var(--muted-foreground))', margin: 0 }}>Low confidence or flagged</p>
+                                    <span style={{
+                                        fontSize: '0.75rem',
+                                        fontWeight: 'bold',
+                                        background: 'hsla(43, 96%, 56%, 0.2)',
+                                        color: 'hsl(var(--warning))',
+                                        padding: '1px 6px',
+                                        borderRadius: '4px'
+                                    }}>
+                                        {needsReviewProviders.length}
+                                    </span>
+                                </div>
+                            </div>
                         </div>
-                        <div>
-                            <h3 style={{ fontSize: '1.125rem', marginBottom: '0.25rem' }}>Needs Review</h3>
-                            <p style={{ fontSize: '0.8125rem', color: 'hsl(var(--muted-foreground))' }}>Low confidence or flagged</p>
-                        </div>
-                        <div style={{ marginLeft: 'auto', fontWeight: 'bold', color: 'hsl(var(--warning))' }}>
-                            {needsReviewProviders.length}
-                        </div>
+
+                        {/* Batch Action */}
+                        <button
+                            className="submit-btn secondary"
+                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', width: 'auto' }}
+                            onClick={() => {
+                                // Simple batch simulation or actual loop
+                                alert("Batch verification email process started for all pending providers.");
+                                needsReviewProviders.forEach(p => handleVerifyEmail(p.npi));
+                            }}
+                            disabled={needsReviewProviders.length === 0}
+                        >
+                            <Mail size={14} style={{ marginRight: '0.5rem' }} />
+                            Batch Verify
+                        </button>
                     </div>
                     {renderTable(needsReviewProviders, "No items pending review.")}
                 </div>
@@ -283,6 +332,7 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                     border: '1px solid hsla(160, 84%, 39%, 0.2)',
                     borderRadius: '16px',
                     padding: '1.5rem',
+                    flex: 1,
                     display: 'flex',
                     flexDirection: 'column'
                 }}>
@@ -297,13 +347,22 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                         </div>
                         <div>
                             <h3 style={{ fontSize: '1.125rem', marginBottom: '0.25rem' }}>Verified</h3>
-                            <p style={{ fontSize: '0.8125rem', color: 'hsl(var(--muted-foreground))' }}>Processed successfully</p>
-                        </div>
-                        <div style={{ marginLeft: 'auto', fontWeight: 'bold', color: 'hsl(var(--success))' }}>
-                            {verifiedProviders.length}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <p style={{ fontSize: '0.8125rem', color: 'hsl(var(--muted-foreground))', margin: 0 }}>Processed successfully</p>
+                                <span style={{
+                                    fontSize: '0.75rem',
+                                    fontWeight: 'bold',
+                                    background: 'hsla(160, 84%, 39%, 0.2)',
+                                    color: 'hsl(var(--success))',
+                                    padding: '1px 6px',
+                                    borderRadius: '4px'
+                                }}>
+                                    {verifiedProviders.length}
+                                </span>
+                            </div>
                         </div>
                     </div>
-                    {renderTable(verifiedProviders, "No verified providers yet.")}
+                    {renderTable(verifiedProviders, "No verified providers yet.", true)}
                 </div>
             </div>
         </div>

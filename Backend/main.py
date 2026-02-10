@@ -631,23 +631,28 @@ async def submit_verification_data(token: str, data: dict = Body(...), db: Async
 
 
 @app.get("/analytics/geo-distribution")
-async def get_geo_distribution(db: AsyncSession = Depends(get_db)):
+async def get_geo_distribution(specialty: Optional[str] = None, db: AsyncSession = Depends(get_db)):
     """
-    Get provider counts by state.
+    Get provider counts by state, optionally filtered by specialty.
     """
     try:
         # Group by state from ProviderProfessional (which has practice address)
-        # Use simple group by count
         stmt = select(
             ProviderProfessional.state, 
             func.count(ProviderProfessional.id)
-        ).group_by(ProviderProfessional.state)
+        )
+
+        if specialty:
+            # Filter where the specialty is in the array
+            # SQLAlchemy's contains operator for PG arrays: array_column.contains([val])
+            stmt = stmt.filter(ProviderProfessional.specialties.contains([specialty]))
+
+        stmt = stmt.group_by(ProviderProfessional.state)
         
         result = await db.execute(stmt)
         rows = result.all()
         
         # Convert to dictionary { "CA": 120, "TX": 50, ... }
-        # Filter out None states
         state_counts = {
             row[0]: row[1] 
             for row in rows 
@@ -658,6 +663,37 @@ async def get_geo_distribution(db: AsyncSession = Depends(get_db)):
     except Exception as e:
         logger.error(f"Error fetching geo analytics: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/analytics/specialties")
+async def get_specialties(db: AsyncSession = Depends(get_db)):
+    """
+    Get list of unique specialties for filtering.
+    """
+    try:
+        # Unnest the array and get distinct values
+        stmt = select(func.unnest(ProviderProfessional.specialties)).distinct()
+        result = await db.execute(stmt)
+        specialties = result.scalars().all()
+        
+        # Filter out None and sort
+        return sorted([s for s in specialties if s])
+    except Exception as e:
+        logger.error(f"Error fetching specialties: {e}")
+        # Fallback if unnest isn't supported (e.g. SQLite) - though we expect PG
+        # Logic: Fetch all arrays and flat map in python
+        try:
+             stmt = select(ProviderProfessional.specialties).filter(ProviderProfessional.specialties != None)
+             result = await db.execute(stmt)
+             all_lists = result.scalars().all()
+             unique_set = set()
+             for lst in all_lists:
+                 if lst:
+                     unique_set.update(lst)
+             return sorted(list(unique_set))
+        except Exception as inner_e:
+             raise HTTPException(status_code=500, detail=str(inner_e))
+        
+
 
 @app.post("/analyze/map-data")
 async def analyze_map_data(data: dict = Body(...)):
