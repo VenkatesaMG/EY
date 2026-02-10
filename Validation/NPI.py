@@ -1,4 +1,6 @@
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 NPI_BASE_URL = "https://npiregistry.cms.hhs.gov/api/"
 
@@ -18,8 +20,12 @@ def lookup_npi(npi_number: str, pretty: bool = False) -> dict | None:
         "pretty": "on" if pretty else "off",
     }
 
+    session = requests.Session()
+    retries = Retry(total=3, backoff_factor=1, status_forcelist=[500, 502, 503, 504])
+    session.mount("https://", HTTPAdapter(max_retries=retries))
+
     try:
-        resp = requests.get(NPI_BASE_URL, params=params, timeout=10)
+        resp = session.get(NPI_BASE_URL, params=params, timeout=30)
         resp.raise_for_status()
     except requests.RequestException as e:
         raise NpiLookupError(f"HTTP error calling NPPES: {e}") from e
