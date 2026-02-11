@@ -3,7 +3,7 @@ import atexit
 import time
 import json
 from dotenv import load_dotenv
-import ollama
+from groq import Groq
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -87,9 +87,47 @@ available_functions = {
     'scrape_webpage': scrape_webpage
 }
 
+tools = [
+    {
+        "type": "function",
+        "function": {
+            "name": "search_web",
+            "description": "Search DuckDuckGo to find provider information on the web.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The search query, e.g., 'Dr. Satyasree Upadhyayula NPI Saint Louis'",
+                    }
+                },
+                "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scrape_webpage",
+            "description": "Scrape the content of a specific webpage to extract detailed provider information.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "url": {
+                        "type": "string",
+                        "description": "The URL of the webpage to scrape.",
+                    }
+                },
+                "required": ["url"],
+            },
+        },
+    },
+]
+
 class EnrichmentManager:
     def __init__(self):
-        self.model = "llama3.1:latest"
+        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        self.model = "llama-3.3-70b-versatile"
         self.system_prompt = """
         You are the **Lead Forensic Data Enrichment Agent** for a major Insurance Firm. 
     Your mission is to construct a **"Golden Record"** profile for the requested Provider (Individual or Organization) by searching, scraping, and fusing information from the web.
@@ -103,12 +141,10 @@ class EnrichmentManager:
 
     ### STRATEGY & WORKFLOW (ReAct Loop)
 
-    You must use the following thinking and execution loop to solve the user's request.
-
     **INSTRUCTIONS:**
     1.  **Search Initial**: Start by searching for `Provider Name + NPI + City`.
-    2.  **Scrape Verification**: Immediately identify high-trust sources (NPI Registry, State Medical Board, Official Clinic Websites) from the search results. You **MUST** use the `scrape_webpage` tool on the most promising URL to verify the details.
-    3.  **Source Fusion**: If you find conflicting data (e.g., two addresses or two phone numbers), search for a third, high-authority source (e.g., the official hospital directory) to resolve the conflict. **Do NOT stop** after one piece of data is found; ensure all missing fields are checked.
+    2.  **Scrape Verification**: Identify high-trust sources from the search results. You **MUST** use the `scrape_webpage` tool to verify details.
+    3.  **Source Fusion**: Resolve conflicts by checking multiple sources. Ensure all missing fields are checked.
 
     ### CRITICAL EXTRACTION AND FUSION RULES
 
@@ -135,6 +171,9 @@ class EnrichmentManager:
     Thought: I have verified the necessary details across multiple high-trust sources and consolidated the profile.
     Final Answer: the final answer to the original input question (OUTPUT THE FINAL JSON ONLY)
 
+    ### FINAL OUTPUT FORMAT:
+    Return THE FINAL JSON ONLY.
+
     Question: {input}
     Thought:{agent_scratchpad}
         """
@@ -154,36 +193,38 @@ class EnrichmentManager:
         ]
 
         for _ in range(15):
-            response = ollama.chat(
+            response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                tools=[search_web, scrape_webpage]
+                tools=tools,
+                tool_choice="auto",
+                max_tokens=4096
             )
 
-            print(response)
-            
-            msg = response['message']
-            messages.append(msg)
+            response_message = response.choices[0].message
+            messages.append(response_message)
 
-            if msg.get('tool_calls'):
-                print(f"--> Agent decided to use {len(msg['tool_calls'])} tool(s)...")
+            if response_message.tool_calls:
+                print(f"--> Agent decided to use {len(response_message.tool_calls)} tool(s)...")
                 
-                for tool in msg['tool_calls']:
-                    fn_name = tool['function']['name']
-                    args = tool['function']['arguments']
+                for tool_call in response_message.tool_calls:
+                    function_name = tool_call.function.name
+                    function_args = json.loads(tool_call.function.arguments)
                     
-                    if fn_name in available_functions:
-                        function_to_call = available_functions[fn_name]
-                        tool_output = function_to_call(**args)
+                    if function_name in available_functions:
+                        function_to_call = available_functions[function_name]
+                        tool_output = function_to_call(**function_args)
                         
                         messages.append({
-                            'role': 'tool',
-                            'content': str(tool_output),
+                            "tool_call_id": tool_call.id,
+                            "role": "tool",
+                            "name": function_name,
+                            "content": str(tool_output),
                         })
                     else:
-                        print(f"Error: Function {fn_name} not found")
+                        print(f"Error: Function {function_name} not found")
             else:
-                return msg['content']
+                return response_message.content
                 
         return "Agent timed out after 15 steps."
 
@@ -202,7 +243,7 @@ if __name__ == "__main__":
     }
 
     try:
-        print("--- Starting Deep Enrichment (Native Llama Mode) ---")
+        print("--- Starting Deep Enrichment (Groq Llama Mode) ---")
         final_response = manager.enrich_profile(
             partial_profile=incomplete_profile, 
             missing_keys=["phone", "practice_address", "fax", "email"]

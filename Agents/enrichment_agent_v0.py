@@ -3,7 +3,10 @@ import atexit
 import time
 import json
 from dotenv import load_dotenv
-import ollama
+# import ollama  <-- Removed
+# from Validation.groq_client import generate_text # Need to handle import path carefully or duplicate client
+# Assuming the running context allows this import, as services.py does it.
+from Validation.groq_client import generate_text
 
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -75,7 +78,7 @@ def scrape_webpage_direct(url: str):
 
 class EnrichmentManager:
     def __init__(self):
-        self.model = "phi3:latest"
+        # self.model = "qwen2.5:7b" # Replaced by Groq model default in client
         
         self.system_prompt = """
         You are a Healthcare Data Structuring Engine. 
@@ -156,18 +159,19 @@ class EnrichmentManager:
         {full_context}
         """
 
-        print(f"\n--> Extracting expanded schema for {name}...")
+        print(f"\n--> Extracting expanded schema for {name} using Groq...")
         
         try:
-            response = ollama.chat(
-                model=self.model,
-                messages=[
-                    {'role': 'system', 'content': self.system_prompt},
-                    {'role': 'user', 'content': user_prompt}
-                ],
-                format="json" # Forces valid JSON output
+            # Combine system and user prompt for Groq as simple message list or concatenated
+            # groq_client handles "messages" list.
+            full_prompt = f"SYSTEM INSTRUCTIONS:\n{self.system_prompt}\n\nUSER REQUEST:\n{user_prompt}"
+            
+            response_content = generate_text(
+                prompt=full_prompt, 
+                json_mode=True,
+                model="llama-3.3-70b-versatile"
             )
-            return response['message']['content']
+            return response_content
             
         except Exception as e:
             return json.dumps({"error": str(e), "overall_confidence": 0.0})

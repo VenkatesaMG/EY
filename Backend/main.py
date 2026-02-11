@@ -715,15 +715,11 @@ async def get_specialties(db: AsyncSession = Depends(get_db)):
 async def analyze_map_data(data: dict = Body(...)):
 
     """
-    Analyze geographic distribution data using Gemini AI.
+    Analyze geographic distribution data using Groq AI (Llama 3).
     """
-    # ... existing implementation kept same ...
     try:
         import json
-        import os
-        from google import genai
-        
-        gemini_client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        from Validation.groq_client import generate_text
         
         prompt = f"""
 You are a healthcare data analyst. Analyze the following geographic distribution data of healthcare provider submissions across US states.
@@ -749,27 +745,12 @@ Please provide a comprehensive analysis that includes:
 Format your response in clear, readable paragraphs suitable for display in a UI.
 """
         
-        response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=prompt,
-            config={
-                "temperature": 0.7,
-            }
+        # Use Groq instead of Gemini
+        analysis_text = generate_text(
+            prompt=prompt,
+            model="llama-3.3-70b-versatile",
+            json_mode=False
         )
-        
-        try:
-            analysis_text = response.text
-        except AttributeError:
-            try:
-                if hasattr(response, 'parsed'):
-                    analysis_text = str(response.parsed)
-                elif hasattr(response, 'candidates') and response.candidates:
-                    analysis_text = response.candidates[0].content.parts[0].text
-                else:
-                    analysis_text = str(response)
-            except Exception as e:
-                logger.error(f"Error extracting text from Gemini response: {e}")
-                analysis_text = "Analysis completed, but response format was unexpected."
         
         return {
             "success": True,
@@ -777,7 +758,7 @@ Format your response in clear, readable paragraphs suitable for display in a UI.
         }
         
     except Exception as e:
-        logger.error(f"Gemini analysis error: {e}")
+        logger.error(f"Groq analysis error: {e}")
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

@@ -4,7 +4,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission
 from Validation.NPI import lookup_npi
-from Validation.gemini_compare import compare_row_with_npi_gemini
+# from Validation.gemini_compare import compare_row_with_npi_gemini
+from Validation.groq_compare import compare_row_with_npi_groq
 from Agents.enrichment_agent_v0 import EnrichmentManager
 import json
 import logging
@@ -361,6 +362,8 @@ class EnrichmentService:
                     manager.enrich_profile,
                     partial_profile
                 )
+
+                print(result)
 
                 # ---- parse agent output ----
 

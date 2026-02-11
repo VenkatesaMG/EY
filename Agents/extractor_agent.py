@@ -1,3 +1,4 @@
+# extractor_agent.py
 import os
 import sys
 from pypdf import PdfReader
@@ -5,9 +6,10 @@ from dotenv import load_dotenv
 import pytesseract
 from PIL import Image
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+# from langchain_google_genai import ChatGoogleGenerativeAI # Removed
 from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
+from Validation.groq_client import generate_text
 
 # Schema
 try:
@@ -25,11 +27,7 @@ def safe_print(text):
 
 class HealthcareExtractionModel:
     def __init__(self, api_key: str = None):
-        self.llm = ChatGoogleGenerativeAI(
-            model="gemini-2.5-flash",
-            temperature=0,
-            google_api_key=api_key or os.getenv("GEMINI_API_KEY")
-        )
+        # self.llm = ChatGoogleGenerativeAI(...) # Removed
         self.parser = PydanticOutputParser(pydantic_object=HealthcareProviderProfile)
 
     def load_pdf_content(self, pdf_path: str) -> str:
@@ -78,12 +76,19 @@ class HealthcareExtractionModel:
             partial_variables={"format_instructions": self.parser.get_format_instructions()}
         )
 
-        chain = prompt | self.llm | self.parser
-
         try:
-            safe_print("--- Analyzing Document for Provider/Organization Data ---")
-            result = chain.invoke({"text_content": raw_text})
+            safe_print("--- Analyzing Document for Provider/Organization Data using Groq ---")
+            
+            # Format prompt with variables
+            formatted_prompt = prompt.format(text_content=raw_text)
+            
+            # Call Groq
+            llm_output = generate_text(formatted_prompt, json_mode=True, model="llama-3.3-70b-versatile")
+            
+            # Parse output
+            result = self.parser.parse(llm_output)
             return result
+            
         except Exception as e:
             safe_print(f"Extraction Logic Failed: {e}")
             return None
