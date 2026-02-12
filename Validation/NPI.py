@@ -46,8 +46,20 @@ def lookup_npi(npi_number: str, pretty: bool = False) -> dict | None:
     taxonomies = raw.get("taxonomies", [])         # array of specialties
     addresses = raw.get("addresses", [])           # first = primary practice, second = mailing [web:1]
 
-    primary_practice = addresses[0] if len(addresses) >= 1 else {}
-    mailing_address = addresses[1] if len(addresses) >= 2 else {}
+    # Find primary practice address (LOCATION) and mailing address (MAILING)
+    primary_practice = None
+    mailing_address = None
+
+    for addr in addresses:
+        purpose = addr.get("address_purpose", "")
+        if purpose == "LOCATION" and not primary_practice:
+            primary_practice = addr
+        elif purpose == "MAILING" and not mailing_address:
+            mailing_address = addr
+    
+    # Fallback to index if purpose not found (legacy behavior)
+    if not primary_practice and addresses:
+        primary_practice = addresses[0]
 
     normalized = {
         "npi": raw.get("number"),
@@ -61,6 +73,7 @@ def lookup_npi(npi_number: str, pretty: bool = False) -> dict | None:
         "gender": basic.get("gender"),
         "last_updated": basic.get("last_updated"),
         "primary_taxonomy": taxonomies[0] if taxonomies else None,
+        "taxonomies": taxonomies,  # Use 'taxonomies' key to match what services.py expects
         "all_taxonomies": taxonomies,
         "primary_practice_address": {
             "address_1": primary_practice.get("address_1"),
@@ -69,6 +82,7 @@ def lookup_npi(npi_number: str, pretty: bool = False) -> dict | None:
             "state": primary_practice.get("state"),
             "postal_code": primary_practice.get("postal_code"),
             "telephone_number": primary_practice.get("telephone_number"),
+            "fax_number": primary_practice.get("fax_number"), # Added fax
             "country_code": primary_practice.get("country_code"),
         } if primary_practice else None,
         "mailing_address": {

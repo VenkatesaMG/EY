@@ -291,8 +291,18 @@ class ValidationService:
             # Taxonomy Locked
             if npi_info.get("primary_taxonomy"):
                 provider.professional.taxonomy_code = npi_info.get("primary_taxonomy", {}).get("code")
-                provider.professional.taxonomies = npi_info.get("taxonomies", [])
+                provider.professional.taxonomies = npi_info.get("all_taxonomies", [])
+                
+                # Extract specialties from taxonomies
+                specialties_list = []
+                for tax in npi_info.get("all_taxonomies", []):
+                    desc = tax.get("desc")
+                    if desc and desc not in specialties_list:
+                        specialties_list.append(desc)
+                provider.professional.specialties = specialties_list
+                
                 update_meta(provider.professional, 'taxonomy_code', 'npi')
+                update_meta(provider.professional, 'specialties', 'npi')
 
             # 2. ENRICHABLE FIELDS (Scrape/Input Source)
             # Only update from input if NPI is empty OR if input is deemed high quality (e.g. website)
@@ -308,15 +318,26 @@ class ValidationService:
             # Addresses: Keep NPI as primary for now (simplification), log mismatch
             # We store NPI address to ensure mailing works
             if npi_addr_dict.get("address_1"):
+                # Update Personal (Master)
                 provider.address_line1 = npi_addr_dict.get("address_1")
                 provider.city = npi_addr_dict.get("city")
                 provider.state = npi_addr_dict.get("state")
                 provider.postal_code = npi_addr_dict.get("postal_code")
                 provider.country = npi_addr_dict.get("country_code", "US")
+                
+                # Update Professional (Practice Location)
+                provider.professional.address_line1 = npi_addr_dict.get("address_1")
+                provider.professional.city = npi_addr_dict.get("city")
+                provider.professional.state = npi_addr_dict.get("state")
+                provider.professional.postal_code = npi_addr_dict.get("postal_code")
+                provider.professional.country = npi_addr_dict.get("country_code", "US")
+                
                 update_meta(provider, 'address', 'npi')
             elif data.get("address_line1"):
                 provider.address_line1 = data.get("address_line1")
                 provider.city = data.get("city")
+                provider.state = data.get("state")
+                provider.postal_code = data.get("postal_code")
                 update_meta(provider, 'address', 'submission')
             
             # Website: NPI usually doesn't have it, so Input wins
@@ -501,9 +522,11 @@ class EnrichmentService:
                 
                 if result.get("state"):
                     provider_prof.state = result["state"]
+                    provider.state = result["state"] # Sync parent table for analytics
 
                 if result.get("postal_code"):
                     provider_prof.postal_code = result["postal_code"]
+                    provider.postal_code = result["postal_code"]
 
                 if result.get("specialties"):
                     # Assuming specialties is a list of strings
@@ -517,9 +540,17 @@ class EnrichmentService:
                          provider.meta.status = "verified"
                     
                     # Boost confidence score
-                    new_score = (provider.meta.overall_confidence or 0.0) + 10.0
-                    provider.meta.overall_confidence = max(0.0, min(100.0, new_score))
-                    provider.meta.confidence_score = provider.meta.overall_confidence
+                    agent_confidence = result.get("overall_confidence", 0.0)
+                    if agent_confidence <= 1.0: agent_confidence *= 100 # Normalize if 0-1
+                    
+                    # Boost logic: Take max of (current + 10) OR agent's confidence
+                    current_score = provider.meta.overall_confidence or 0.0
+                    boosted_score = min(100.0, current_score + 10.0)
+                    
+                    new_score = max(boosted_score, agent_confidence)
+                    
+                    provider.meta.overall_confidence = new_score
+                    provider.meta.confidence_score = new_score
                     
                     provider.meta.last_verified = datetime.utcnow()
 

@@ -16,44 +16,28 @@ from webdriver_manager.chrome import ChromeDriverManager
 
 load_dotenv()
 
-# --- KEEPING YOUR EXISTING DRIVER SETUP ---
-_driver_instance = None
+# Helper functions moved inside class or context manager usage
+# For simplicity and thread-safety, we will create a fresh driver for each enrichment task.
+# This adds overhead (2-3s setup) but GUARANTEES no session conflicts in threaded environment.
 
-def get_shared_driver():
-    global _driver_instance
-    if _driver_instance is None:
-        print("--- LAUNCHING CHROME ---")
-        options = Options()
-        options.add_argument("--headless")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-        service = Service(ChromeDriverManager().install())
-        _driver_instance = webdriver.Chrome(service=service, options=options)
-        atexit.register(cleanup_driver)
-    return _driver_instance
+def create_driver():
+    options = Options()
+    options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+    options.add_argument("--disable-gpu")
+    options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    service = Service(ChromeDriverManager().install())
+    return webdriver.Chrome(service=service, options=options)
 
-def cleanup_driver():
-    global _driver_instance
-    if _driver_instance:
-        try:
-            _driver_instance.quit()
-        except:
-            pass
-        _driver_instance = None
-
-# --- MODIFIED SEARCH & SCRAPE TOOLS ---
-# We return the data directly instead of printing it for the Agent to "see"
-
-def search_web_direct(query: str):
-    driver = get_shared_driver()
+def search_web_with_driver(driver, query: str):
     urls = []
     try:
         print(f"DEBUG: Searching DuckDuckGo for '{query}'...")
         driver.get(f"https://html.duckduckgo.com/html/?q={query}")
         time.sleep(2)
         elements = driver.find_elements(By.CSS_SELECTOR, ".result")
-        for el in elements[:3]: # Limit to top 3 to save context
+        for el in elements[:3]: 
             try:
                 link_el = el.find_element(By.CSS_SELECTOR, "a.result__a")
                 urls.append(link_el.get_attribute("href"))
@@ -62,16 +46,14 @@ def search_web_direct(query: str):
         print(f"Search Error: {e}")
     return urls
 
-def scrape_webpage_direct(url: str):
-    driver = get_shared_driver()
+def scrape_webpage_with_driver(driver, url: str):
     try:
         print(f"DEBUG: Scraping {url}...")
         driver.get(url)
         time.sleep(1)
         body = driver.find_element(By.TAG_NAME, "body").text
-        # Clean up excessive newlines to save tokens
         clean_body = " ".join(body.split())
-        return clean_body[:3000] # Limit chars per page
+        return clean_body[:3000] 
     except Exception as e:
         print(f"Scrape Error: {e}")
         return ""
@@ -130,21 +112,34 @@ class EnrichmentManager:
         ]
 
         collected_context = []
+        driver = None
         
-        # 2. GATHER DATA (The "Grunt Work")
-        # (Assuming search_web_direct and scrape_webpage_direct are defined as in previous turn)
-        seen_urls = set()
-        for q in queries:
-            urls = search_web_direct(q)
-            # We only take the top 1-2 results per query to keep the prompt clean for 8B
-            for url in urls[:2]: 
-                if url in seen_urls: continue
-                seen_urls.add(url)
+        try:
+            # 2. GATHER DATA with FRESH DRIVER
+            driver = create_driver()
+            
+            seen_urls = set()
+            for q in queries:
+                if not driver: break 
                 
-                content = scrape_webpage_direct(url)
-                if content:
-                    # We inject the Source URL so the LLM can fill the 'website' field
-                    collected_context.append(f"SOURCE_URL: {url}\nPAGE_CONTENT: {content}\n---")
+                urls = search_web_with_driver(driver, q)
+                # We only take the top 1-2 results per query to keep the prompt clean for 8B
+                for url in urls[:2]: 
+                    if url in seen_urls: continue
+                    seen_urls.add(url)
+                    
+                    content = scrape_webpage_with_driver(driver, url)
+                    if content:
+                        # We inject the Source URL so the LLM can fill the 'website' field
+                        collected_context.append(f"SOURCE_URL: {url}\nPAGE_CONTENT: {content}\n---")
+                        
+        except Exception as e:
+            print(f"Driver/Search Error: {e}")
+        finally:
+            if driver:
+                try:
+                    driver.quit()
+                except: pass
 
         full_context = "\n".join(collected_context)
         
@@ -193,5 +188,5 @@ if __name__ == "__main__":
         result_json = manager.enrich_profile(incomplete_profile)
         print("\n--- FINAL ENRICHED PROFILE ---")
         print(json.dumps(json.loads(result_json), indent=2))
-    finally:
-        cleanup_driver()
+    except Exception as e:
+        print(f"Error: {e}")
