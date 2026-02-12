@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, RefreshCw, ChevronRight, AlertCircle, Loader2, Map, ArrowRight, Mail, CheckCircle } from 'lucide-react';
+import { Users, RefreshCw, ChevronRight, AlertCircle, Loader2, Map, ArrowRight, Mail, CheckCircle, Globe } from 'lucide-react';
 import './App.css';
 
 const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
@@ -82,10 +82,34 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
         }
     };
 
+    const handleBatchEnrich = async () => {
+        const providersList = needsReviewProviders;
+        if (!window.confirm(`Start batch enrichment for ${providersList.length} providers?`)) return;
+
+        try {
+            const npiList = providersList.map(p => p.npi);
+            const response = await fetch('http://localhost:8000/providers/batch-enrich', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ npi_list: npiList })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || 'Failed to start batch enrichment');
+            }
+            const data = await response.json();
+            alert(data.message);
+        } catch (err) {
+            console.error("Batch enrichment failed", err);
+            alert(`Error: ${err.message}`);
+        }
+    };
+
     // Filter Logic
     const needsReviewProviders = providers.filter(p => {
         const score = p.overall_confidence || 0;
-        return p.status === 'needs_review' || score < 60 || p.status === 'pending';
+        return p.status === 'needs_review' || score < 60 || p.status === 'pending' || p.status === 'processing';
     });
 
     const verifiedProviders = providers.filter(p => {
@@ -309,19 +333,30 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                         </div>
 
                         {/* Batch Action */}
-                        <button
-                            className="submit-btn secondary"
-                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', width: 'auto' }}
-                            onClick={() => {
-                                // Simple batch simulation or actual loop
-                                alert("Batch verification email process started for all pending providers.");
-                                needsReviewProviders.forEach(p => handleVerifyEmail(p.npi));
-                            }}
-                            disabled={needsReviewProviders.length === 0}
-                        >
-                            <Mail size={14} style={{ marginRight: '0.5rem' }} />
-                            Batch Verify
-                        </button>
+                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                            <button
+                                className="submit-btn secondary"
+                                style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', width: 'auto' }}
+                                onClick={() => {
+                                    // Simple batch simulation or actual loop
+                                    alert("Batch verification email process started for all pending providers.");
+                                    needsReviewProviders.forEach(p => handleVerifyEmail(p.npi));
+                                }}
+                                disabled={needsReviewProviders.length === 0}
+                            >
+                                <Mail size={14} style={{ marginRight: '0.5rem' }} />
+                                Batch Verify
+                            </button>
+                            <button
+                                className="submit-btn secondary"
+                                style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', width: 'auto' }}
+                                onClick={handleBatchEnrich}
+                                disabled={needsReviewProviders.length === 0}
+                            >
+                                <Globe size={14} style={{ marginRight: '0.5rem' }} />
+                                Batch Enrich
+                            </button>
+                        </div>
                     </div>
                     {renderTable(needsReviewProviders, "No items pending review.")}
                 </div>

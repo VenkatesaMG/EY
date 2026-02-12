@@ -45,6 +45,57 @@ class ValidationService:
             # Update status to show NPI lookup in progress
             submission.processing_status = "npi_lookup"
             await db.commit()
+            
+            # --- PRE-CREATE PROVIDER FOR UI VISIBILITY ---
+            # This ensures they appear on Dashboard immediately as "Processing"
+            try:
+                # Check if exists
+                stmt_check = select(ProviderPersonal).options(selectinload(ProviderPersonal.meta)).filter(ProviderPersonal.npi == npi_val)
+                res_check = await db.execute(stmt_check)
+                existing_prov = res_check.scalars().first()
+                
+                if not existing_prov:
+                    # Create placeholder from Input Data
+                    placeholder_p = ProviderPersonal(
+                        npi=npi_val,
+                        first_name=data.get('first_name') or data.get('fname'),
+                        last_name=data.get('last_name') or data.get('lname'),
+                        display_name=f"{data.get('first_name', '')} {data.get('last_name', '')}".strip() or data.get('practice_name'),
+                        address_line1=data.get('address_line1') or data.get('address'),
+                        city=data.get('city'),
+                        state=data.get('state'),
+                        country="US"
+                    )
+                    
+                    placeholder_prof = ProviderProfessional(
+                        npi=npi_val,
+                        practice_name=data.get('practice_name')
+                    )
+                    
+                    placeholder_meta = ProviderMeta(
+                        npi=npi_val,
+                        status="processing",
+                        overall_confidence=0.0
+                    )
+                    
+                    placeholder_p.professional = placeholder_prof
+                    placeholder_p.meta = placeholder_meta
+                    
+                    db.add(placeholder_p)
+                    db.add(placeholder_prof)
+                    db.add(placeholder_meta)
+                    await db.commit()
+                    logger.info(f"👤 Created placeholder provider for visibility: {npi_val}")
+                else:
+                    # Update status to processing if not already verified
+                    if existing_prov.meta and existing_prov.meta.status not in ['verified', 'verified_by_provider']:
+                        existing_prov.meta.status = "processing"
+                        await db.commit()
+
+            except Exception as e:
+                logger.error(f"⚠️ Failed to pre-create provider: {e}")
+                # Continue anyway, main pipeline will handle it
+            
             logger.info(f"🔍 Step 1: NPI Registry Lookup for {npi_val}")
                 
             try:
@@ -56,12 +107,36 @@ class ValidationService:
                 logger.error(f"❌ NPI Lookup Failed: {e}")
                 submission.processing_status = "failed"
                 submission.error_message = f"NPI API Error: {str(e)}"
+                
+                # Update Provider Meta to failed so user knows
+                stmt_fail = select(ProviderMeta).filter(ProviderMeta.npi == npi_val)
+                res_fail = await db.execute(stmt_fail)
+                meta_fail = res_fail.scalars().first()
+                if meta_fail:
+                    meta_fail.status = "failed"
+                    flags =  meta_fail.data_quality_flags or []
+                    if "npi_api_error" not in flags:
+                         flags.append("npi_api_error")
+                    meta_fail.data_quality_flags = flags
+                    
                 await db.commit()
                 return # Retry later?
 
         if not npi_info:
             submission.processing_status = "rejected_invalid_npi"
             submission.error_message = "NPI not found in registry"
+            
+            # Update Provider Meta to rejected
+            stmt_fail = select(ProviderMeta).filter(ProviderMeta.npi == npi_val)
+            res_fail = await db.execute(stmt_fail)
+            meta_fail = res_fail.scalars().first()
+            if meta_fail:
+                meta_fail.status = "rejected"
+                flags = meta_fail.data_quality_flags or []
+                if "invalid_npi" not in flags:
+                     flags.append("invalid_npi")
+                meta_fail.data_quality_flags = flags
+                
             await db.commit()
             return
         
@@ -92,14 +167,13 @@ class ValidationService:
             # Prepare comparisons
             input_first = data.get('first_name') or data.get('fname') or ''
             input_last = data.get('last_name') or data.get('lname') or ''
-            input_name = f"{input_first} {input_last}".strip() or data.get("organization_name", "")
+            input_name = f"{input_first} {input_last}".strip() or data.get("practice_name", "") or data.get("organization_name", "")
 
             npi_name = f"{npi_info.get('first_name', '')} {npi_info.get('last_name', '')}".strip()
             if not npi_name.strip(): npi_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name", "")
 
             name_score = calculate_similarity(input_name, npi_name)
             
-            # Address construction
             # Address construction
             # Handle both nested 'locations' (JSON/API) and flat structure (CSV)
             locations_data = data.get('locations')
@@ -109,7 +183,7 @@ class ValidationService:
             else:
                 # Fallback for CSV flat structure
                 # Check multiple common keys
-                input_addr_1 = data.get('addr1') or data.get('address_line1') or data.get('street_address_1') or ''
+                input_addr_1 = data.get('addr1') or data.get('address_line1') or data.get('street_address_1') or data.get('address') or ''
                 input_city = data.get('city') or ''
             
             input_addr = f"{input_addr_1} {input_city}"
@@ -156,7 +230,8 @@ class ValidationService:
                 
             # Cap score
             final_confidence = max(0, min(100, score))
-            if final_confidence < 60: manual_review = True
+            if final_confidence < 70: manual_review = True
+
 
             logger.info(f"⚖️ Verifiction: Name={name_score:.1f}% | Addr={addr_score:.1f}% | Phone={phone_match}")
             logger.info(f"📊 Confidence Score: {final_confidence:.1f} | Manual Review: {manual_review}")
@@ -232,17 +307,26 @@ class ValidationService:
 
             # Addresses: Keep NPI as primary for now (simplification), log mismatch
             # We store NPI address to ensure mailing works
-            provider.address_line1 = npi_addr_dict.get("address_1")
-            provider.city = npi_addr_dict.get("city")
-            provider.state = npi_addr_dict.get("state")
-            provider.postal_code = npi_addr_dict.get("postal_code")
-            provider.country = npi_addr_dict.get("country_code", "US")
-            update_meta(provider, 'address', 'npi')
+            if npi_addr_dict.get("address_1"):
+                provider.address_line1 = npi_addr_dict.get("address_1")
+                provider.city = npi_addr_dict.get("city")
+                provider.state = npi_addr_dict.get("state")
+                provider.postal_code = npi_addr_dict.get("postal_code")
+                provider.country = npi_addr_dict.get("country_code", "US")
+                update_meta(provider, 'address', 'npi')
+            elif data.get("address_line1"):
+                provider.address_line1 = data.get("address_line1")
+                provider.city = data.get("city")
+                update_meta(provider, 'address', 'submission')
             
             # Website: NPI usually doesn't have it, so Input wins
             if data.get("website"):
                 provider.professional.website = data.get("website")
                 update_meta(provider.professional, 'website', 'submission')
+
+            if data.get("practice_name"):
+                provider.professional.practice_name = data.get("practice_name")
+                update_meta(provider.professional, 'practice_name', 'submission')
             
             # 3. Update Meta
             provider.meta.raw_data_json = data 
@@ -289,35 +373,43 @@ def extract_json_block(text: str):
 class EnrichmentService:
 
     @staticmethod
-    async def enrich_provider(submission_id: int):
+    async def enrich_provider(submission_id: int = None, npi: str = None):
 
         print("Starting Enrichment...")
 
         async with AsyncSessionLocal() as db:
-
-            submission = await db.get(RawProviderSubmission, submission_id)
-            if not submission:
-                logger.error("Submission not found")
+            
+            submission = None
+            if submission_id:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                if not submission:
+                    logger.error("Submission not found")
+                    return
+                npi = submission.npi
+            
+            if not npi:
+                logger.error("No NPI provided for enrichment")
                 return
 
-            provider = provider = await db.scalar(
+            provider = await db.scalar(
     select(ProviderPersonal)
     .options(
         selectinload(ProviderPersonal.professional),
         selectinload(ProviderPersonal.meta),
     )
-    .where(ProviderPersonal.npi == submission.npi)
+    .where(ProviderPersonal.npi == npi)
 )
 
             provider_prof = await db.scalar(
                 select(ProviderProfessional)
-                .where(ProviderProfessional.npi == submission.npi)
+                .where(ProviderProfessional.npi == npi)
             )
 
             if not provider or not provider_prof:
                 logger.warning("Provider records incomplete — skipping")
-                submission.processing_status = "processed"
-                await db.commit()
+                if submission:
+                    submission.processing_status = "processed"
+                    await db.commit()
                 return
 
             logger.info(f"🔍 Enriching Provider: {provider.display_name}")
@@ -335,8 +427,15 @@ class EnrichmentService:
             if not provider_prof.website:
                 missing_keys.append("website")
 
+            if provider_prof.accepting_new_patients is None:
+                missing_keys.append("accepting_new_patients")
+
+            if provider_prof.telehealth is None:
+                missing_keys.append("telehealth")
+
             if not missing_keys:
-                submission.processing_status = "processed"
+                if submission:
+                    submission.processing_status = "processed"
                 await db.commit()
                 return
 
@@ -363,8 +462,6 @@ class EnrichmentService:
                     partial_profile
                 )
 
-                print(result)
-
                 # ---- parse agent output ----
 
                 if isinstance(result, str):
@@ -375,20 +472,59 @@ class EnrichmentService:
 
                 # ---- apply updates ----
 
-                if result.get("phone") and not provider.phone:
+                logger.info(f"✨ Enrichment Result: {json.dumps(result, indent=2)}")
+
+                if result.get("phone"):
                     provider.phone = result["phone"]
 
-                if result.get("website") and not provider_prof.website:
+                if result.get("website"):
                     provider_prof.website = result["website"]
 
-                if result.get("practice_address") and not provider_prof.address_line1:
+                # Fix: Agent returns 'address_line1', not 'practice_address'
+                # For address, we allow enrichment to update the PROFESSIONAL address if found
+                if result.get("address_line1"):
+                    provider_prof.address_line1 = result["address_line1"]
+                elif result.get("practice_address"):
                     provider_prof.address_line1 = result["practice_address"]
+
+                if result.get("practice_name"):
+                    provider_prof.practice_name = result["practice_name"]
+
+                if result.get("accepting_new_patients") is not None:
+                    provider_prof.accepting_new_patients = result["accepting_new_patients"]
+
+                if result.get("telehealth") is not None:
+                    provider_prof.telehealth = result["telehealth"]
+
+                if result.get("city"):
+                    provider_prof.city = result["city"]
+                
+                if result.get("state"):
+                    provider_prof.state = result["state"]
+
+                if result.get("postal_code"):
+                    provider_prof.postal_code = result["postal_code"]
+
+                if result.get("specialties"):
+                    # Assuming specialties is a list of strings
+                    provider_prof.specialties = result["specialties"]
 
                 if provider.meta:
                     provider.meta.status = "enriched"
+                    # Reset manual review if we found keys
+                    if provider.meta.manual_review_required and (result.get("phone") or result.get("website")):
+                         provider.meta.manual_review_required = False
+                         provider.meta.status = "verified"
+                    
+                    # Boost confidence score
+                    new_score = (provider.meta.overall_confidence or 0.0) + 10.0
+                    provider.meta.overall_confidence = max(0.0, min(100.0, new_score))
+                    provider.meta.confidence_score = provider.meta.overall_confidence
+                    
                     provider.meta.last_verified = datetime.utcnow()
 
-                submission.processing_status = "enriched"
+                if submission:
+                    submission.processing_status = "enriched"
 
                 await db.commit()
 
@@ -397,7 +533,8 @@ class EnrichmentService:
             except Exception as e:
                 logger.exception("❌ Enrichment failed")
 
-                submission.processing_status = "processed"
+                if submission:
+                    submission.processing_status = "processed"
                 await db.commit()
 
 class SubmissionPipeline:

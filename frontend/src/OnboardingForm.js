@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import './App.css';
 
-const OnboardingForm = () => {
+const OnboardingForm = ({ onBatchUploadSuccess }) => {
     const [mode, setMode] = useState('single');
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState({ text: '', type: '' });
@@ -15,10 +15,11 @@ const OnboardingForm = () => {
         npi: '',
         first_name: '',
         last_name: '',
-        organization_name: '',
+        practice_name: '',
         primary_email: '',
         phone: '',
         website: '',
+        address_line1: '',
         type: 'Doctor'
     });
 
@@ -34,10 +35,11 @@ const OnboardingForm = () => {
             npi: '',
             first_name: '',
             last_name: '',
-            organization_name: '',
+            practice_name: '',
             primary_email: '',
             phone: '',
             website: '',
+            address_line1: '',
             type: 'Doctor'
         });
         setMessage({ text: '', type: '' });
@@ -87,7 +89,8 @@ const OnboardingForm = () => {
                 npi: extracted.npi || prev.npi,
                 first_name: extracted.first_name || prev.first_name,
                 last_name: extracted.last_name || prev.last_name,
-                organization_name: extracted.organization_name || prev.organization_name,
+                practice_name: extracted.practice_name || extracted.organization_name || prev.practice_name,
+                address_line1: extracted.address_line1 || extracted.address || prev.address_line1,
                 primary_email: extracted.primary_email || prev.primary_email,
                 type: extracted.provider_type === "Organization" ? "Hospital" : "Doctor"
             }));
@@ -138,7 +141,13 @@ const OnboardingForm = () => {
             });
             if (!response.ok) throw new Error('Batch upload failed');
             const resData = await response.json();
-            setMessage({ text: resData.message, type: 'success' });
+
+            setMessage({ text: 'Batch processed! Redirecting to dashboard...', type: 'success' });
+            // Small delay to read the message
+            setTimeout(() => {
+                if (onBatchUploadSuccess) onBatchUploadSuccess();
+            }, 1000);
+
             setCsvFile(null);
         } catch (err) {
             setMessage({ text: `Error: ${err.message}`, type: 'error' });
@@ -369,12 +378,22 @@ const OnboardingForm = () => {
                         </div>
 
                         <div className="form-group" style={{ marginTop: '1.5rem' }}>
-                            <label>Organization Name</label>
+                            <label>Practice Name</label>
                             <input
-                                name="organization_name"
-                                value={formData.organization_name}
+                                name="practice_name"
+                                value={formData.practice_name}
                                 onChange={handleInputChange}
-                                placeholder="e.g. Saint Mary's Hospital"
+                                placeholder="e.g. Saint Mary's Practice"
+                            />
+                        </div>
+
+                        <div className="form-group" style={{ marginTop: '1.5rem' }}>
+                            <label>Address</label>
+                            <input
+                                name="address_line1"
+                                value={formData.address_line1}
+                                onChange={handleInputChange}
+                                placeholder="123 Medical Ctr Dr"
                             />
                         </div>
 
@@ -434,7 +453,7 @@ const OnboardingForm = () => {
                     </div>
                     <h3 style={{ textAlign: 'center' }}>Upload CSV File</h3>
                     <p style={{ textAlign: 'center' }}>
-                        Process multiple providers at once. Required columns: npi, first_name, last_name, organization_name
+                        Process multiple providers at once. Required columns: npi, first_name, last_name, practice_name, address
                     </p>
                     <form onSubmit={handleBatchUpload}>
                         <div style={{

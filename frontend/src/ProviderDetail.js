@@ -135,7 +135,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                 }}>
                     {getStatusIcon(status)}
                     {status}
-                    {confidence && <span style={{ opacity: 0.8 }}>({confidence}%)</span>}
+                    {confidence && <span style={{ opacity: 0.8 }}>({Math.round(confidence)}%)</span>}
                 </div>
             )}
         </div>
@@ -257,7 +257,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                 gap: '0.375rem'
                             }}>
                                 <Shield size={14} />
-                                {provider.overall_confidence}% confidence
+                                {Math.round(provider.overall_confidence)}% confidence
                             </span>
                         )}
                         <button
@@ -286,6 +286,30 @@ const ProviderDetail = ({ providerId, onBack }) => {
                         >
                             <Mail size={12} />
                             Verify via Email
+                        </button>
+                        <button
+                            onClick={async () => {
+                                try {
+                                    const res = await fetch(`http://localhost:8000/providers/${provider.npi}/enrich`, { method: 'POST' });
+                                    const data = await res.json();
+                                    alert(data.message);
+                                } catch (err) {
+                                    alert("Error: " + err.message);
+                                }
+                            }}
+                            className="action-button primary"
+                            style={{
+                                padding: '0.25rem 0.75rem',
+                                fontSize: '0.75rem',
+                                marginLeft: '0.5rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                background: 'hsl(217, 91%, 60%)' // Slightly different color if needed or keep primary
+                            }}
+                        >
+                            <Globe size={12} />
+                            Enrich Now
                         </button>
                     </div>
                 </div>
@@ -334,6 +358,11 @@ const ProviderDetail = ({ providerId, onBack }) => {
                             value={provider.taxonomy_code}
                             status={provider.taxonomy_status}
                             confidence={provider.taxonomy_confidence}
+                        />
+                        <ValidationField
+                            icon={Stethoscope}
+                            label="Specialties"
+                            value={Array.isArray(provider.specialties) ? provider.specialties.join(', ') : provider.specialties}
                         />
                         <ValidationField
                             icon={FileCheck}

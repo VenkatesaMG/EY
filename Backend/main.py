@@ -17,12 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
-from sqlalchemy import func, desc
+from sqlalchemy import func, desc, delete
 
 from database import get_db, init_db
 from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission, MarketExpansionOpportunity
 from Agents.extractor_agent import HealthcareExtractionModel
-from services import ValidationService, SubmissionPipeline
+from services import ValidationService, SubmissionPipeline, EnrichmentService
 
 # Configure clean, readable logging
 logging.basicConfig(
@@ -55,6 +55,33 @@ async def on_startup():
     await init_db()
 
 # --- Endpoints ---
+
+@app.delete("/admin/reset")
+async def reset_database(db: AsyncSession = Depends(get_db)):
+    """
+    DANGER: Deletes all data from the database.
+    """
+    try:
+        # Delete submissions first
+        await db.execute(delete(RawProviderSubmission))
+        
+        # Explicitly delete children first
+        await db.execute(delete(ProviderMeta))
+        await db.execute(delete(ProviderProfessional))
+        
+        # Then delete parent
+        await db.execute(delete(ProviderPersonal))
+        
+        # Delete market opportunities
+        await db.execute(delete(MarketExpansionOpportunity))
+        
+        await db.commit()
+        
+        return {"message": "Database reset successful. All tables cleared."}
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Database reset failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/onboard/extract")
 async def extract_data(file: UploadFile = File(...)):
@@ -218,7 +245,11 @@ async def get_submission_status(submission_id: int, db: AsyncSession = Depends(g
     }
 
 @app.post("/onboard/csv")
-async def onboard_csv_upload(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+async def onboard_csv_upload(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...), 
+    db: AsyncSession = Depends(get_db)
+):
     """
     Batch processing for CSV.
     """
@@ -255,14 +286,14 @@ async def onboard_csv_upload(file: UploadFile = File(...), db: AsyncSession = De
         
         await db.commit()
         
-        processed_count = 0
+        processed_count = len(submissions_created)
         for sub in submissions_created:
             await db.refresh(sub)
-            await ValidationService.process_submission(sub, db)
-            processed_count += 1
+            # Process in background so UI gets control back immediately
+            background_tasks.add_task(ValidationService.process_submission, sub.submission_id)
             
         return {
-            "message": f"Successfully processed {processed_count} submissions from CSV."
+            "message": f"Queued {processed_count} submissions for processing."
         }
         
     except Exception as e:
@@ -644,6 +675,47 @@ async def submit_verification_data(token: str, data: dict = Body(...), db: Async
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+
+@app.post("/providers/{provider_id}/enrich")
+async def enrich_provider_manual(provider_id: str, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
+    """
+    Manually trigger enrichment for a provider.
+    """
+    # Verify provider exists
+    result = await db.execute(select(ProviderPersonal).filter(ProviderPersonal.npi == provider_id))
+    provider = result.scalars().first()
+    
+    if not provider:
+        raise HTTPException(status_code=404, detail="Provider not found")
+        
+    # Trigger background task
+    background_tasks.add_task(EnrichmentService.enrich_provider, npi=provider_id)
+    return {"message": "Enrichment started in background"}
+
+
+@app.post("/providers/batch-enrich")
+async def batch_enrich_providers(
+    background_tasks: BackgroundTasks,
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Trigger enrichment for a batch of providers.
+    Payload: {"npi_list": ["123", "456"]}
+    """
+    npi_list = data.get("npi_list", [])
+    if not npi_list:
+        raise HTTPException(status_code=400, detail="No NPI list provided")
+    
+    count = 0
+    for npi in npi_list:
+         background_tasks.add_task(EnrichmentService.enrich_provider, npi=npi)
+         count += 1
+         
+    return {"message": f"Started enrichment for {count} providers"}
+
 
 
 @app.get("/analytics/geo-distribution")
