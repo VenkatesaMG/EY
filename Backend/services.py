@@ -558,6 +558,11 @@ class EnrichmentService:
                         if domain:
                             logger.info(f"🌐 Found org domain: {domain}")
                             
+                            # Save domain as website if no website found earlier
+                            if not provider_prof.website:
+                                provider_prof.website = f"https://{domain}"
+                                logger.info(f"🌐 Updated website: https://{domain}")
+                            
                             # Call Hunter.io to find the email
                             hunter_result = await loop.run_in_executor(
                                 None,
