@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     ArrowLeft,
     User,
@@ -15,13 +15,23 @@ import {
     CheckCircle,
     XCircle,
     AlertCircle,
-    ExternalLink
+    ExternalLink,
+    Clock,
+    History,
+    ArrowRight,
+    Database,
+    Search,
+    Bot,
+    UserCheck
 } from 'lucide-react';
 import './App.css';
 
 const ProviderDetail = ({ providerId, onBack }) => {
     const [provider, setProvider] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [activeTab, setActiveTab] = useState('overview'); // 'overview' or 'history'
+    const [auditLog, setAuditLog] = useState([]);
+    const [auditLoading, setAuditLoading] = useState(false);
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -37,6 +47,25 @@ const ProviderDetail = ({ providerId, onBack }) => {
         };
         fetchDetail();
     }, [providerId]);
+
+    // Fetch audit log when History tab is selected
+    useEffect(() => {
+        if (activeTab === 'history' && providerId) {
+            const fetchAuditLog = async () => {
+                setAuditLoading(true);
+                try {
+                    const res = await fetch(`http://localhost:8000/providers/${providerId}/audit-log`);
+                    const data = await res.json();
+                    setAuditLog(data);
+                } catch (err) {
+                    console.error('Failed to fetch audit log:', err);
+                } finally {
+                    setAuditLoading(false);
+                }
+            };
+            fetchAuditLog();
+        }
+    }, [activeTab, providerId]);
 
     if (loading) {
         return (
@@ -107,6 +136,85 @@ const ProviderDetail = ({ providerId, onBack }) => {
             default:
                 return 'pending';
         }
+    };
+
+    // --- Audit Log Helpers ---
+    const getSourceIcon = (source) => {
+        switch (source) {
+            case 'npi_lookup': return <Database size={16} />;
+            case 'enrichment': return <Search size={16} />;
+            case 'hunter_io': return <Mail size={16} />;
+            case 'verification': return <UserCheck size={16} />;
+            case 'validation': return <Shield size={16} />;
+            case 'submission': return <FileCheck size={16} />;
+            default: return <Bot size={16} />;
+        }
+    };
+
+    const getSourceColor = (source) => {
+        switch (source) {
+            case 'npi_lookup': return 'hsl(217, 91%, 60%)';
+            case 'enrichment': return 'hsl(160, 84%, 39%)';
+            case 'hunter_io': return 'hsl(43, 96%, 56%)';
+            case 'verification': return 'hsl(280, 70%, 60%)';
+            case 'validation': return 'hsl(199, 89%, 48%)';
+            case 'submission': return 'hsl(340, 75%, 55%)';
+            default: return 'hsl(228, 8%, 55%)';
+        }
+    };
+
+    const getSourceLabel = (source) => {
+        switch (source) {
+            case 'npi_lookup': return 'NPI Registry';
+            case 'enrichment': return 'Web Enrichment';
+            case 'hunter_io': return 'Hunter.io';
+            case 'verification': return 'Provider Verification';
+            case 'validation': return 'AI Validation';
+            case 'submission': return 'Form Submission';
+            case 'csv_import': return 'CSV Import';
+            default: return source;
+        }
+    };
+
+    const formatFieldName = (name) => {
+        return name
+            .replace(/_/g, ' ')
+            .replace(/\b\w/g, l => l.toUpperCase());
+    };
+
+    const formatTimestamp = (iso) => {
+        if (!iso) return '';
+        const d = new Date(iso);
+        const now = new Date();
+        const diffMs = now - d;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMs / 3600000);
+        const diffDays = Math.floor(diffMs / 86400000);
+
+        let relative;
+        if (diffMins < 1) relative = 'Just now';
+        else if (diffMins < 60) relative = `${diffMins}m ago`;
+        else if (diffHours < 24) relative = `${diffHours}h ago`;
+        else if (diffDays < 7) relative = `${diffDays}d ago`;
+        else relative = d.toLocaleDateString();
+
+        return {
+            relative,
+            full: d.toLocaleString()
+        };
+    };
+
+    // Group audit entries by date
+    const groupByDate = (entries) => {
+        const groups = {};
+        entries.forEach(entry => {
+            const date = new Date(entry.changed_at).toLocaleDateString('en-US', {
+                year: 'numeric', month: 'long', day: 'numeric'
+            });
+            if (!groups[date]) groups[date] = [];
+            groups[date].push(entry);
+        });
+        return groups;
     };
 
     const ValidationField = ({ icon: Icon, label, value, status, confidence }) => (
@@ -190,6 +298,182 @@ const ProviderDetail = ({ providerId, onBack }) => {
             </div>
         </div>
     );
+
+    // --- Timeline Entry Component ---
+    const TimelineEntry = ({ entry, isLast }) => {
+        const time = formatTimestamp(entry.changed_at);
+        const color = getSourceColor(entry.change_source);
+
+        return (
+            <motion.div
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                transition={{ duration: 0.3 }}
+                className="timeline-entry"
+            >
+                {/* Timeline connector line */}
+                <div className="timeline-connector">
+                    <div className="timeline-dot" style={{
+                        background: color,
+                        boxShadow: `0 0 12px ${color}40`
+                    }}>
+                        {getSourceIcon(entry.change_source)}
+                    </div>
+                    {!isLast && <div className="timeline-line" />}
+                </div>
+
+                {/* Content */}
+                <div className="timeline-content">
+                    <div className="timeline-header">
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span className="timeline-field-name">
+                                {formatFieldName(entry.field_name)}
+                            </span>
+                            <span className="timeline-source-badge" style={{
+                                background: `${color}18`,
+                                color: color,
+                                border: `1px solid ${color}30`
+                            }}>
+                                {getSourceLabel(entry.change_source)}
+                            </span>
+                            {entry.table_name && (
+                                <span className="timeline-table-badge">
+                                    {entry.table_name}
+                                </span>
+                            )}
+                        </div>
+                        <div className="timeline-time" title={time.full}>
+                            <Clock size={12} />
+                            {time.relative}
+                        </div>
+                    </div>
+
+                    {/* Value change visualization */}
+                    <div className="timeline-values">
+                        {entry.old_value ? (
+                            <div className="timeline-value-change">
+                                <div className="timeline-old-value">
+                                    <span className="value-label">From</span>
+                                    <span className="value-text old">{entry.old_value === 'None' ? 'Empty' : entry.old_value}</span>
+                                </div>
+                                <ArrowRight size={14} style={{ color: 'hsl(228, 8%, 40%)', flexShrink: 0 }} />
+                                <div className="timeline-new-value">
+                                    <span className="value-label">To</span>
+                                    <span className="value-text new">{entry.new_value === 'None' ? 'Empty' : entry.new_value}</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="timeline-value-set">
+                                <span className="value-label">Set to</span>
+                                <span className="value-text new">{entry.new_value === 'None' ? 'Empty' : entry.new_value}</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Actor badge */}
+                    {entry.actor && (
+                        <div className="timeline-actor">
+                            {entry.actor === 'provider' ? <UserCheck size={12} /> : <Bot size={12} />}
+                            <span>{entry.actor === 'provider' ? 'Provider' : 'System'}</span>
+                        </div>
+                    )}
+                </div>
+            </motion.div>
+        );
+    };
+
+    // --- Render History Tab ---
+    const renderHistoryTab = () => {
+        if (auditLoading) {
+            return (
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '4rem 2rem',
+                    gap: '1rem'
+                }}>
+                    <Loader2 size={32} className="spin" style={{ color: 'hsl(217, 91%, 60%)' }} />
+                    <p style={{ color: 'hsl(228, 8%, 55%)', fontSize: '0.875rem' }}>
+                        Loading change history...
+                    </p>
+                </div>
+            );
+        }
+
+        if (auditLog.length === 0) {
+            return (
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="detail-card"
+                    style={{ textAlign: 'center', padding: '3rem 2rem' }}
+                >
+                    <History size={48} style={{ color: 'hsl(228, 8%, 30%)', marginBottom: '1rem' }} />
+                    <h3 style={{ borderBottom: 'none', marginBottom: '0.5rem', paddingBottom: 0 }}>No History Yet</h3>
+                    <p style={{ color: 'hsl(228, 8%, 55%)', fontSize: '0.9375rem' }}>
+                        Changes to this provider's data will appear here.
+                        Try running validation or enrichment to generate audit entries.
+                    </p>
+                </motion.div>
+            );
+        }
+
+        const grouped = groupByDate(auditLog);
+
+        return (
+            <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+            >
+                {/* Summary Stats */}
+                <div className="audit-stats">
+                    <div className="audit-stat-card">
+                        <div className="audit-stat-number">{auditLog.length}</div>
+                        <div className="audit-stat-label">Total Changes</div>
+                    </div>
+                    <div className="audit-stat-card">
+                        <div className="audit-stat-number">
+                            {new Set(auditLog.map(e => e.change_source)).size}
+                        </div>
+                        <div className="audit-stat-label">Data Sources</div>
+                    </div>
+                    <div className="audit-stat-card">
+                        <div className="audit-stat-number">
+                            {new Set(auditLog.map(e => e.field_name)).size}
+                        </div>
+                        <div className="audit-stat-label">Fields Updated</div>
+                    </div>
+                    <div className="audit-stat-card">
+                        <div className="audit-stat-number">
+                            {Object.keys(grouped).length}
+                        </div>
+                        <div className="audit-stat-label">Active Days</div>
+                    </div>
+                </div>
+
+                {/* Timeline */}
+                <div className="audit-timeline">
+                    {Object.entries(grouped).map(([date, entries]) => (
+                        <div key={date} className="timeline-date-group">
+                            <div className="timeline-date-header">
+                                <Clock size={14} />
+                                {date}
+                            </div>
+                            {entries.map((entry, idx) => (
+                                <TimelineEntry
+                                    key={entry.id}
+                                    entry={entry}
+                                    isLast={idx === entries.length - 1}
+                                />
+                            ))}
+                        </div>
+                    ))}
+                </div>
+            </motion.div>
+        );
+    };
 
     return (
         <motion.div
@@ -305,7 +589,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '0.25rem',
-                                background: 'hsl(217, 91%, 60%)' // Slightly different color if needed or keep primary
+                                background: 'hsl(217, 91%, 60%)'
                             }}
                         >
                             <Globe size={12} />
@@ -315,123 +599,167 @@ const ProviderDetail = ({ providerId, onBack }) => {
                 </div>
             </div>
 
-            {/* Two Column Layout */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
-                {/* Left Column - Validation Data */}
-                <div>
-                    <div className="detail-card">
-                        <h3>
-                            <FileCheck size={18} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                            Core Validation
-                        </h3>
-                        <ValidationField
-                            icon={Shield}
-                            label="NPI"
-                            value={provider.npi}
-                            status={provider.npi_status}
-                            confidence={provider.npi_confidence}
-                        />
-                        <ValidationField
-                            icon={User}
-                            label="Name"
-                            value={provider.display_name}
-                            status={provider.name_status}
-                            confidence={provider.name_confidence}
-                        />
-                        <ValidationField
-                            icon={Building2}
-                            label="Practice"
-                            value={provider.practice_name}
-                            status={provider.practice_status}
-                            confidence={provider.practice_confidence}
-                        />
-                        <ValidationField
-                            icon={MapPin}
-                            label="Address"
-                            value={[provider.address_line1, provider.city, provider.state].filter(Boolean).join(', ') || null}
-                            status={provider.address_status}
-                            confidence={provider.address_confidence}
-                        />
-                        <ValidationField
-                            icon={Stethoscope}
-                            label="Taxonomy"
-                            value={provider.taxonomy_code}
-                            status={provider.taxonomy_status}
-                            confidence={provider.taxonomy_confidence}
-                        />
-                        <ValidationField
-                            icon={Stethoscope}
-                            label="Specialties"
-                            value={Array.isArray(provider.specialties) ? provider.specialties.join(', ') : provider.specialties}
-                        />
-                        <ValidationField
-                            icon={FileCheck}
-                            label="License"
-                            value={provider.license_number}
-                            status={provider.license_status}
-                            confidence={provider.license_confidence}
-                        />
-                    </div>
-                </div>
-
-                {/* Right Column - Contact & Enrichment */}
-                <div>
-                    <div className="detail-card">
-                        <h3>
-                            <Globe size={18} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
-                            Contact & Enrichment
-                        </h3>
-                        <InfoField icon={Phone} label="Phone Number" value={provider.phone} />
-                        <InfoField icon={Mail} label="Email Address" value={provider.email} />
-                        <InfoField icon={Globe} label="Website" value={provider.website} isLink />
-                        <InfoField
-                            icon={MapPin}
-                            label="Full Address"
-                            value={[
-                                provider.address_line1,
-                                provider.address_line2,
-                                [provider.city, provider.state, provider.postal_code].filter(Boolean).join(', ')
-                            ].filter(Boolean).join(', ') || null}
-                        />
-                    </div>
-                </div>
+            {/* Tab Switcher */}
+            <div className="detail-tabs">
+                <button
+                    className={`detail-tab ${activeTab === 'overview' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('overview')}
+                >
+                    <FileCheck size={16} />
+                    Overview
+                </button>
+                <button
+                    className={`detail-tab ${activeTab === 'history' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('history')}
+                >
+                    <History size={16} />
+                    History
+                    {auditLog.length > 0 && (
+                        <span className="tab-badge">{auditLog.length}</span>
+                    )}
+                </button>
             </div>
 
-            {/* Raw Data Section */}
-            {provider.raw_data_json && (
-                <motion.div
-                    className="detail-card"
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                    style={{ marginTop: '1.5rem' }}
-                >
-                    <h3 style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                    }}>
-                        <span>Raw API Response</span>
-                        <span style={{
-                            fontSize: '0.75rem',
-                            fontWeight: 400,
-                            color: 'hsl(228, 8%, 55%)',
-                            background: 'hsl(228, 15%, 9%)',
-                            padding: '0.25rem 0.5rem',
-                            borderRadius: '4px'
-                        }}>
-                            JSON
-                        </span>
-                    </h3>
-                    <pre style={{
-                        maxHeight: '300px',
-                        overflow: 'auto',
-                        fontSize: '0.8125rem'
-                    }}>
-                        {JSON.stringify(provider.raw_data_json, null, 2)}
-                    </pre>
-                </motion.div>
-            )}
+            {/* Tab Content */}
+            <AnimatePresence mode="wait">
+                {activeTab === 'overview' ? (
+                    <motion.div
+                        key="overview"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.2 }}
+                    >
+                        {/* Two Column Layout */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.5rem' }}>
+                            {/* Left Column - Validation Data */}
+                            <div>
+                                <div className="detail-card">
+                                    <h3>
+                                        <FileCheck size={18} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                                        Core Validation
+                                    </h3>
+                                    <ValidationField
+                                        icon={Shield}
+                                        label="NPI"
+                                        value={provider.npi}
+                                        status={provider.npi_status}
+                                        confidence={provider.npi_confidence}
+                                    />
+                                    <ValidationField
+                                        icon={User}
+                                        label="Name"
+                                        value={provider.display_name}
+                                        status={provider.name_status}
+                                        confidence={provider.name_confidence}
+                                    />
+                                    <ValidationField
+                                        icon={Building2}
+                                        label="Practice"
+                                        value={provider.practice_name}
+                                        status={provider.practice_status}
+                                        confidence={provider.practice_confidence}
+                                    />
+                                    <ValidationField
+                                        icon={MapPin}
+                                        label="Address"
+                                        value={[provider.address_line1, provider.city, provider.state].filter(Boolean).join(', ') || null}
+                                        status={provider.address_status}
+                                        confidence={provider.address_confidence}
+                                    />
+                                    <ValidationField
+                                        icon={Stethoscope}
+                                        label="Taxonomy"
+                                        value={provider.taxonomy_code}
+                                        status={provider.taxonomy_status}
+                                        confidence={provider.taxonomy_confidence}
+                                    />
+                                    <ValidationField
+                                        icon={Stethoscope}
+                                        label="Specialties"
+                                        value={Array.isArray(provider.specialties) ? provider.specialties.join(', ') : provider.specialties}
+                                    />
+                                    <ValidationField
+                                        icon={FileCheck}
+                                        label="License"
+                                        value={provider.license_number}
+                                        status={provider.license_status}
+                                        confidence={provider.license_confidence}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Right Column - Contact & Enrichment */}
+                            <div>
+                                <div className="detail-card">
+                                    <h3>
+                                        <Globe size={18} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
+                                        Contact & Enrichment
+                                    </h3>
+                                    <InfoField icon={Phone} label="Phone Number" value={provider.phone} />
+                                    <InfoField icon={Mail} label="Email Address" value={provider.email} />
+                                    <InfoField icon={Globe} label="Website" value={provider.website} isLink />
+                                    <InfoField
+                                        icon={MapPin}
+                                        label="Full Address"
+                                        value={[
+                                            provider.address_line1,
+                                            provider.address_line2,
+                                            [provider.city, provider.state, provider.postal_code].filter(Boolean).join(', ')
+                                        ].filter(Boolean).join(', ') || null}
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Raw Data Section */}
+                        {provider.raw_data_json && (
+                            <motion.div
+                                className="detail-card"
+                                initial={{ opacity: 0, y: 20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.2 }}
+                                style={{ marginTop: '1.5rem' }}
+                            >
+                                <h3 style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'space-between'
+                                }}>
+                                    <span>Raw API Response</span>
+                                    <span style={{
+                                        fontSize: '0.75rem',
+                                        fontWeight: 400,
+                                        color: 'hsl(228, 8%, 55%)',
+                                        background: 'hsl(228, 15%, 9%)',
+                                        padding: '0.25rem 0.5rem',
+                                        borderRadius: '4px'
+                                    }}>
+                                        JSON
+                                    </span>
+                                </h3>
+                                <pre style={{
+                                    maxHeight: '300px',
+                                    overflow: 'auto',
+                                    fontSize: '0.8125rem'
+                                }}>
+                                    {JSON.stringify(provider.raw_data_json, null, 2)}
+                                </pre>
+                            </motion.div>
+                        )}
+                    </motion.div>
+                ) : (
+                    <motion.div
+                        key="history"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.2 }}
+                    >
+                        {renderHistoryTab()}
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </motion.div>
     );
 };

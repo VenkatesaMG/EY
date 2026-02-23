@@ -176,3 +176,24 @@ class MarketExpansionOpportunity(Base):
     
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_analyzed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# 6. Audit Trail Log
+class ProviderAuditLog(Base):
+    __tablename__ = "provider_audit_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    npi: Mapped[str] = mapped_column(String, nullable=False, index=True)
+
+    # What changed
+    field_name: Mapped[str] = mapped_column(String, nullable=False)  # e.g. "phone", "address_line1", "status"
+    table_name: Mapped[str] = mapped_column(String, nullable=True)   # "personal", "professional", "meta"
+    old_value: Mapped[str] = mapped_column(Text, nullable=True)
+    new_value: Mapped[str] = mapped_column(Text, nullable=True)
+
+    # Who/what made the change
+    change_source: Mapped[str] = mapped_column(String, nullable=False)  # "npi_lookup", "enrichment", "verification", "manual", "csv_import"
+    actor: Mapped[str] = mapped_column(String, nullable=True)           # "system", "provider", "admin"
+
+    # When
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

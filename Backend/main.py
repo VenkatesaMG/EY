@@ -20,9 +20,9 @@ from sqlalchemy.orm import selectinload
 from sqlalchemy import func, desc, delete
 
 from database import get_db, init_db
-from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission, MarketExpansionOpportunity
+from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission, MarketExpansionOpportunity, ProviderAuditLog
+from services import ValidationService, SubmissionPipeline, EnrichmentService, log_field_change
 from Agents.extractor_agent import HealthcareExtractionModel
-from services import ValidationService, SubmissionPipeline, EnrichmentService
 
 # Configure clean, readable logging
 logging.basicConfig(
@@ -62,7 +62,10 @@ async def reset_database(db: AsyncSession = Depends(get_db)):
     DANGER: Deletes all data from the database.
     """
     try:
-        # Delete submissions first
+        # Delete audit logs first
+        await db.execute(delete(ProviderAuditLog))
+        
+        # Delete submissions
         await db.execute(delete(RawProviderSubmission))
         
         # Explicitly delete children first
@@ -623,37 +626,44 @@ async def submit_verification_data(token: str, data: dict = Body(...), db: Async
             # Ensure relationship is established
             p.professional = prof
         
-        # Update fields if provided
+        # Update fields if provided — with audit trail
         # We explicitly trust the provider input here
+        verification_fields_personal = {
+            'first_name': 'first_name', 'last_name': 'last_name',
+            'display_name': 'display_name', 'email': 'email', 'phone': 'phone'
+        }
+        for field_key, attr_name in verification_fields_personal.items():
+            if field_key in data:
+                old_val = getattr(p, attr_name, None)
+                new_val = data[field_key]
+                log_field_change(db, p.npi, attr_name, old_val, new_val, 'verification', 'personal', 'provider')
+                setattr(p, attr_name, new_val)
         
-        if "first_name" in data: p.first_name = data["first_name"]
-        if "last_name" in data: p.last_name = data["last_name"]
-        if "display_name" in data: p.display_name = data["display_name"]
-        if "email" in data: p.email = data["email"]
-        if "phone" in data: p.phone = data["phone"]
-        
-        # Professional
-        if "practice_name" in data: prof.practice_name = data["practice_name"]
-        if "website" in data: prof.website = data["website"]
-        if "accepting_new_patients" in data: prof.accepting_new_patients = data["accepting_new_patients"]
-        if "telehealth" in data: prof.telehealth = data["telehealth"]
+        # Professional fields
+        verification_fields_prof = {
+            'practice_name': 'practice_name', 'website': 'website',
+            'accepting_new_patients': 'accepting_new_patients', 'telehealth': 'telehealth'
+        }
+        for field_key, attr_name in verification_fields_prof.items():
+            if field_key in data:
+                old_val = getattr(prof, attr_name, None)
+                new_val = data[field_key]
+                log_field_change(db, p.npi, attr_name, old_val, new_val, 'verification', 'professional', 'provider')
+                setattr(prof, attr_name, new_val)
         
         # Address (Sync both for simplicity in this flow)
-        if "address_line1" in data: 
-            p.address_line1 = data["address_line1"]
-            prof.address_line1 = data["address_line1"]
-        if "city" in data:
-            p.city = data["city"]
-            prof.city = data["city"]
-        if "state" in data:
-            p.state = data["state"]
-            prof.state = data["state"]
-        if "postal_code" in data:
-            p.postal_code = data["postal_code"]
-            prof.postal_code = data["postal_code"]
+        for addr_field in ['address_line1', 'city', 'state', 'postal_code']:
+            if addr_field in data:
+                old_val = getattr(p, addr_field, None)
+                new_val = data[addr_field]
+                log_field_change(db, p.npi, addr_field, old_val, new_val, 'verification', 'personal', 'provider')
+                setattr(p, addr_field, new_val)
+                setattr(prof, addr_field, new_val)
             
         # Update Meta Status
+        log_field_change(db, p.npi, 'status', meta.status, 'verified_by_provider', 'verification', 'meta', 'provider')
         meta.status = "verified_by_provider"
+        log_field_change(db, p.npi, 'overall_confidence', meta.overall_confidence, 100.0, 'verification', 'meta', 'provider')
         meta.overall_confidence = 100.0
         meta.last_verified = datetime.utcnow()
         meta.verification_token = None # Consume token
@@ -716,6 +726,38 @@ async def batch_enrich_providers(
          
     return {"message": f"Started enrichment for {count} providers"}
 
+
+@app.get("/providers/{provider_id}/audit-log")
+async def get_provider_audit_log(provider_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Get the full audit trail / change history for a provider.
+    Returns all field-level changes ordered by most recent first.
+    """
+    try:
+        stmt = select(ProviderAuditLog).filter(
+            ProviderAuditLog.npi == provider_id
+        ).order_by(desc(ProviderAuditLog.changed_at))
+
+        result = await db.execute(stmt)
+        entries = result.scalars().all()
+
+        return [
+            {
+                "id": entry.id,
+                "field_name": entry.field_name,
+                "table_name": entry.table_name,
+                "old_value": entry.old_value,
+                "new_value": entry.new_value,
+                "change_source": entry.change_source,
+                "actor": entry.actor,
+                "changed_at": entry.changed_at.isoformat() if entry.changed_at else None
+            }
+            for entry in entries
+        ]
+
+    except Exception as e:
+        logger.error(f"Error fetching audit log: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/analytics/geo-distribution")

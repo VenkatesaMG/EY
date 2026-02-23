@@ -2,7 +2,7 @@ from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission
+from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission, ProviderAuditLog
 from Validation.NPI import lookup_npi
 # from Validation.gemini_compare import compare_row_with_npi_gemini
 from Validation.groq_compare import compare_row_with_npi_groq
@@ -15,6 +15,31 @@ import asyncio
 
 # Setup logger
 logger = logging.getLogger("HealthValidator")
+
+# --- Audit Trail Helper ---
+def log_field_change(db_session, npi: str, field_name: str, old_value, new_value, source: str, table_name: str = None, actor: str = "system"):
+    """
+    Records a field-level change to the audit log.
+    Skips logging if old_value == new_value (no actual change).
+    """
+    old_str = str(old_value) if old_value is not None else None
+    new_str = str(new_value) if new_value is not None else None
+    
+    # Don't log if nothing actually changed
+    if old_str == new_str:
+        return None
+    
+    entry = ProviderAuditLog(
+        npi=npi,
+        field_name=field_name,
+        table_name=table_name or "personal",
+        old_value=old_str,
+        new_value=new_str,
+        change_source=source,
+        actor=actor
+    )
+    db_session.add(entry)
+    return entry
 
 class ValidationService:
     @staticmethod
@@ -275,22 +300,29 @@ class ValidationService:
 
             # 1. LOCKED FIELDS (NPI Source)
             # We always overwrite with NPI data if available, regardless of input
+            log_field_change(db, npi_val, 'first_name', provider.first_name, npi_info.get('first_name'), 'npi_lookup', 'personal')
             provider.first_name = npi_info.get("first_name")
             update_meta(provider, 'first_name', 'npi')
             
+            log_field_change(db, npi_val, 'last_name', provider.last_name, npi_info.get('last_name'), 'npi_lookup', 'personal')
             provider.last_name = npi_info.get("last_name")
             update_meta(provider, 'last_name', 'npi')
             
             if npi_info.get("enumeration_type") == "NPI-2":
                 org_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name")
+                log_field_change(db, npi_val, 'display_name', provider.display_name, org_name, 'npi_lookup', 'personal')
                 provider.display_name = org_name
             else:
-                provider.display_name = f"{provider.first_name} {provider.last_name}".strip()
+                new_display = f"{provider.first_name} {provider.last_name}".strip()
+                log_field_change(db, npi_val, 'display_name', provider.display_name, new_display, 'npi_lookup', 'personal')
+                provider.display_name = new_display
             update_meta(provider, 'display_name', 'npi')
 
             # Taxonomy Locked
             if npi_info.get("primary_taxonomy"):
-                provider.professional.taxonomy_code = npi_info.get("primary_taxonomy", {}).get("code")
+                new_tax_code = npi_info.get("primary_taxonomy", {}).get("code")
+                log_field_change(db, npi_val, 'taxonomy_code', provider.professional.taxonomy_code, new_tax_code, 'npi_lookup', 'professional')
+                provider.professional.taxonomy_code = new_tax_code
                 provider.professional.taxonomies = npi_info.get("all_taxonomies", [])
                 
                 # Extract specialties from taxonomies
@@ -299,6 +331,7 @@ class ValidationService:
                     desc = tax.get("desc")
                     if desc and desc not in specialties_list:
                         specialties_list.append(desc)
+                log_field_change(db, npi_val, 'specialties', str(provider.professional.specialties), str(specialties_list), 'npi_lookup', 'professional')
                 provider.professional.specialties = specialties_list
                 
                 update_meta(provider.professional, 'taxonomy_code', 'npi')
@@ -309,15 +342,22 @@ class ValidationService:
             
             # Phone: If NPI has it, use it. If not, use Input.
             if npi_addr_dict.get("telephone_number"):
+                log_field_change(db, npi_val, 'phone', provider.phone, npi_addr_dict.get('telephone_number'), 'npi_lookup', 'personal')
                 provider.phone = npi_addr_dict.get("telephone_number")
                 update_meta(provider, 'phone', 'npi')
             elif data.get("phone"):
+                log_field_change(db, npi_val, 'phone', provider.phone, data.get('phone'), 'submission', 'personal')
                 provider.phone = data.get("phone")
                 update_meta(provider, 'phone', 'submission')
 
             # Addresses: Keep NPI as primary for now (simplification), log mismatch
             # We store NPI address to ensure mailing works
             if npi_addr_dict.get("address_1"):
+                # Log address changes
+                log_field_change(db, npi_val, 'address_line1', provider.address_line1, npi_addr_dict.get('address_1'), 'npi_lookup', 'personal')
+                log_field_change(db, npi_val, 'city', provider.city, npi_addr_dict.get('city'), 'npi_lookup', 'personal')
+                log_field_change(db, npi_val, 'state', provider.state, npi_addr_dict.get('state'), 'npi_lookup', 'personal')
+                
                 # Update Personal (Master)
                 provider.address_line1 = npi_addr_dict.get("address_1")
                 provider.city = npi_addr_dict.get("city")
@@ -334,6 +374,7 @@ class ValidationService:
                 
                 update_meta(provider, 'address', 'npi')
             elif data.get("address_line1"):
+                log_field_change(db, npi_val, 'address_line1', provider.address_line1, data.get('address_line1'), 'submission', 'personal')
                 provider.address_line1 = data.get("address_line1")
                 provider.city = data.get("city")
                 provider.state = data.get("state")
@@ -342,17 +383,22 @@ class ValidationService:
             
             # Website: NPI usually doesn't have it, so Input wins
             if data.get("website"):
+                log_field_change(db, npi_val, 'website', provider.professional.website, data.get('website'), 'submission', 'professional')
                 provider.professional.website = data.get("website")
                 update_meta(provider.professional, 'website', 'submission')
 
             if data.get("practice_name"):
+                log_field_change(db, npi_val, 'practice_name', provider.professional.practice_name, data.get('practice_name'), 'submission', 'professional')
                 provider.professional.practice_name = data.get("practice_name")
                 update_meta(provider.professional, 'practice_name', 'submission')
             
             # 3. Update Meta
-            provider.meta.raw_data_json = data 
-            provider.meta.status = "needs_review" if manual_review else "verified"
+            provider.meta.raw_data_json = data
+            new_status = "needs_review" if manual_review else "verified"
+            log_field_change(db, npi_val, 'status', provider.meta.status, new_status, 'validation', 'meta')
+            provider.meta.status = new_status
             provider.meta.manual_review_required = manual_review
+            log_field_change(db, npi_val, 'confidence_score', provider.meta.confidence_score, final_confidence, 'validation', 'meta')
             provider.meta.confidence_score = final_confidence
             provider.meta.data_quality_flags = flags
             
@@ -502,40 +548,50 @@ class EnrichmentService:
                 logger.info(f"✨ Enrichment Result: {json.dumps(result, indent=2)}")
 
                 if result.get("phone"):
+                    log_field_change(db, npi, 'phone', provider.phone, result['phone'], 'enrichment', 'personal')
                     provider.phone = result["phone"]
 
                 if result.get("website"):
+                    log_field_change(db, npi, 'website', provider_prof.website, result['website'], 'enrichment', 'professional')
                     provider_prof.website = result["website"]
 
                 # Fix: Agent returns 'address_line1', not 'practice_address'
                 # For address, we allow enrichment to update the PROFESSIONAL address if found
                 if result.get("address_line1"):
+                    log_field_change(db, npi, 'address_line1', provider_prof.address_line1, result['address_line1'], 'enrichment', 'professional')
                     provider_prof.address_line1 = result["address_line1"]
                 elif result.get("practice_address"):
+                    log_field_change(db, npi, 'address_line1', provider_prof.address_line1, result['practice_address'], 'enrichment', 'professional')
                     provider_prof.address_line1 = result["practice_address"]
 
                 if result.get("practice_name"):
+                    log_field_change(db, npi, 'practice_name', provider_prof.practice_name, result['practice_name'], 'enrichment', 'professional')
                     provider_prof.practice_name = result["practice_name"]
 
                 if result.get("accepting_new_patients") is not None:
+                    log_field_change(db, npi, 'accepting_new_patients', provider_prof.accepting_new_patients, result['accepting_new_patients'], 'enrichment', 'professional')
                     provider_prof.accepting_new_patients = result["accepting_new_patients"]
 
                 if result.get("telehealth") is not None:
+                    log_field_change(db, npi, 'telehealth', provider_prof.telehealth, result['telehealth'], 'enrichment', 'professional')
                     provider_prof.telehealth = result["telehealth"]
 
                 if result.get("city"):
+                    log_field_change(db, npi, 'city', provider_prof.city, result['city'], 'enrichment', 'professional')
                     provider_prof.city = result["city"]
                 
                 if result.get("state"):
+                    log_field_change(db, npi, 'state', provider_prof.state, result['state'], 'enrichment', 'professional')
                     provider_prof.state = result["state"]
                     provider.state = result["state"] # Sync parent table for analytics
 
                 if result.get("postal_code"):
+                    log_field_change(db, npi, 'postal_code', provider_prof.postal_code, result['postal_code'], 'enrichment', 'professional')
                     provider_prof.postal_code = result["postal_code"]
                     provider.postal_code = result["postal_code"]
 
                 if result.get("specialties"):
-                    # Assuming specialties is a list of strings
+                    log_field_change(db, npi, 'specialties', str(provider_prof.specialties), str(result['specialties']), 'enrichment', 'professional')
                     provider_prof.specialties = result["specialties"]
 
                 # ---- STEP 2: Hunter.io Email Lookup ----
@@ -573,6 +629,7 @@ class EnrichmentService:
                             )
                             
                             if hunter_result and hunter_result.get("email"):
+                                log_field_change(db, npi, 'email', provider.email, hunter_result['email'], 'hunter_io', 'personal')
                                 provider.email = hunter_result["email"]
                                 logger.info(f"✅ Email found via Hunter.io: {hunter_result['email']} (confidence: {hunter_result.get('confidence')})")
                             else:
@@ -587,11 +644,13 @@ class EnrichmentService:
                     logger.info(f"📧 Email already exists: {provider.email} — skipping Hunter lookup")
 
                 if provider.meta:
-                    provider.meta.status = "enriched"
+                    new_status = "enriched"
                     # Reset manual review if we found keys
                     if provider.meta.manual_review_required and (result.get("phone") or result.get("website")):
                          provider.meta.manual_review_required = False
-                         provider.meta.status = "verified"
+                         new_status = "verified"
+                    log_field_change(db, npi, 'status', provider.meta.status, new_status, 'enrichment', 'meta')
+                    provider.meta.status = new_status
                     
                     # Boost confidence score
                     agent_confidence = result.get("overall_confidence", 0.0)

@@ -953,3 +953,330 @@ select option {
   background: hsl(var(--primary) / 0.3);
   color: hsl(var(--foreground));
 }
+
+/* ============================================
+   Provider Detail Tabs
+   ============================================ */
+.detail-tabs {
+  display: inline-flex;
+  background: hsl(var(--card));
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  border: 1px solid hsl(var(--border));
+  margin-bottom: 1.5rem;
+  gap: 2px;
+}
+
+.detail-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: transparent;
+  border: none;
+  color: hsl(var(--muted-foreground));
+  padding: 0.625rem 1.25rem;
+  border-radius: calc(var(--radius-lg) - 4px);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  position: relative;
+  font-family: inherit;
+}
+
+.detail-tab:hover {
+  color: hsl(var(--foreground));
+  background: hsl(var(--background-elevated));
+}
+
+.detail-tab.active {
+  background: hsl(var(--primary));
+  color: white;
+  box-shadow: var(--shadow-md);
+}
+
+.tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  background: hsla(0, 0%, 100%, 0.2);
+  color: inherit;
+}
+
+.detail-tab:not(.active) .tab-badge {
+  background: hsl(var(--primary-muted));
+  color: hsl(var(--primary));
+}
+
+/* ============================================
+   Audit Trail Stats
+   ============================================ */
+.audit-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.audit-stat-card {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-lg);
+  padding: 1.25rem;
+  text-align: center;
+  transition: all var(--transition-normal);
+}
+
+.audit-stat-card:hover {
+  border-color: hsl(var(--border-hover));
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+.audit-stat-number {
+  font-size: 1.75rem;
+  font-weight: 700;
+  background: var(--gradient-primary);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.2;
+}
+
+.audit-stat-label {
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-top: 0.25rem;
+}
+
+/* ============================================
+   Audit Trail Timeline
+   ============================================ */
+.audit-timeline {
+  position: relative;
+}
+
+.timeline-date-group {
+  margin-bottom: 1.5rem;
+}
+
+.timeline-date-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: hsl(var(--muted-foreground));
+  padding: 0.5rem 0;
+  margin-bottom: 0.75rem;
+  border-bottom: 1px solid hsl(var(--border) / 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.timeline-entry {
+  display: flex;
+  gap: 1rem;
+  position: relative;
+  padding-bottom: 0.5rem;
+}
+
+.timeline-connector {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  width: 36px;
+}
+
+.timeline-dot {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+  z-index: 2;
+  transition: transform var(--transition-fast);
+}
+
+.timeline-entry:hover .timeline-dot {
+  transform: scale(1.15);
+}
+
+.timeline-line {
+  width: 2px;
+  flex: 1;
+  background: linear-gradient(to bottom, hsl(var(--border)) 0%, hsl(var(--border) / 0.3) 100%);
+  margin: 4px 0;
+  min-height: 20px;
+}
+
+.timeline-content {
+  flex: 1;
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius-md);
+  padding: 1rem 1.25rem;
+  margin-bottom: 0.5rem;
+  transition: all var(--transition-fast);
+}
+
+.timeline-content:hover {
+  border-color: hsl(var(--border-hover));
+  box-shadow: var(--shadow-sm);
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.timeline-field-name {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.timeline-source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.timeline-table-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.125rem 0.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.6875rem;
+  font-weight: 500;
+  background: hsl(var(--background-elevated));
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+}
+
+.timeline-time {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: hsl(var(--subtle-foreground));
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Value Change Visualization */
+.timeline-values {
+  margin-bottom: 0.5rem;
+}
+
+.timeline-value-change {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: hsl(var(--background-elevated));
+  border-radius: var(--radius-sm);
+  padding: 0.625rem 0.875rem;
+  border: 1px solid hsl(var(--border) / 0.5);
+}
+
+.timeline-old-value,
+.timeline-new-value {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-value-set {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: hsl(var(--background-elevated));
+  border-radius: var(--radius-sm);
+  padding: 0.625rem 0.875rem;
+  border: 1px solid hsl(var(--border) / 0.5);
+}
+
+.value-label {
+  display: block;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--subtle-foreground));
+  margin-bottom: 0.125rem;
+}
+
+.value-text {
+  display: block;
+  font-size: 0.8125rem;
+  word-break: break-word;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  line-height: 1.4;
+}
+
+.value-text.old {
+  color: hsl(var(--error));
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+.value-text.new {
+  color: hsl(var(--success));
+}
+
+.timeline-actor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  padding: 0.125rem 0;
+}
+
+/* ============================================
+   Responsive: Audit Trail
+   ============================================ */
+@media (max-width: 768px) {
+  .audit-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .timeline-value-change {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .timeline-header {
+    flex-direction: column;
+  }
+
+  .detail-tabs {
+    width: 100%;
+  }
+
+  .detail-tab {
+    flex: 1;
+    justify-content: center;
+  }
+}

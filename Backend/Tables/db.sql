@@ -94,3 +94,19 @@ CREATE TABLE market_expansion_opportunities (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_analyzed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 6. Table: provider_audit_log (Change History / Audit Trail)
+CREATE TABLE provider_audit_log (
+    id SERIAL PRIMARY KEY,
+    npi VARCHAR NOT NULL,
+    field_name VARCHAR NOT NULL,
+    table_name VARCHAR,
+    old_value TEXT,
+    new_value TEXT,
+    change_source VARCHAR NOT NULL,
+    actor VARCHAR,
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_audit_log_npi ON provider_audit_log(npi);
+CREATE INDEX idx_audit_log_changed_at ON provider_audit_log(changed_at);
