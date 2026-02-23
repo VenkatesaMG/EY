@@ -2,6 +2,8 @@ import os
 import atexit
 import time
 import json
+import requests
+from urllib.parse import urlparse, parse_qs, unquote
 from dotenv import load_dotenv
 # import ollama  <-- Removed
 # from Validation.groq_client import generate_text # Need to handle import path carefully or duplicate client
@@ -40,7 +42,23 @@ def search_web_with_driver(driver, query: str):
         for el in elements[:3]: 
             try:
                 link_el = el.find_element(By.CSS_SELECTOR, "a.result__a")
-                urls.append(link_el.get_attribute("href"))
+                url = link_el.get_attribute("href")
+                # Unwrap DuckDuckGo redirect URLs (can be nested)
+                for _ in range(3):
+                    parsed_check = urlparse(url)
+                    if "duckduckgo.com" in parsed_check.netloc:
+                        qs = parse_qs(parsed_check.query)
+                        if "uddg" in qs:
+                            url = unquote(qs["uddg"][0])
+                        else:
+                            break
+                    else:
+                        break
+                # Skip ad/tracker URLs
+                parsed_final = urlparse(url)
+                if any(ad in parsed_final.netloc.lower() for ad in ['duckduckgo.com', 'bing.com/aclick']):
+                    continue
+                urls.append(url)
             except: continue
     except Exception as e:
         print(f"Search Error: {e}")
@@ -57,6 +75,147 @@ def scrape_webpage_with_driver(driver, url: str):
     except Exception as e:
         print(f"Scrape Error: {e}")
         return ""
+
+
+def find_org_domain(org_name: str) -> str:
+    """
+    Search for '{org_name} official website' on DuckDuckGo
+    and scrape the top 5 result domains. Returns the first valid domain or None.
+    """
+    driver = None
+    try:
+        driver = create_driver()
+        query = f"{org_name} official website"
+        print(f"\n🔍 Searching DuckDuckGo for: '{query}'\n")
+        print("=" * 60)
+
+        driver.get(f"https://html.duckduckgo.com/html/?q={query}")
+        time.sleep(3)
+
+        elements = driver.find_elements(By.CSS_SELECTOR, ".result")
+
+        results = []
+        for i, el in enumerate(elements[:5]):
+            try:
+                link_el = el.find_element(By.CSS_SELECTOR, "a.result__a")
+                url = link_el.get_attribute("href")
+                title = link_el.text
+
+                # Unwrap DuckDuckGo redirect URLs (can be nested)
+                for _ in range(3):
+                    parsed_check = urlparse(url)
+                    if "duckduckgo.com" in parsed_check.netloc:
+                        qs = parse_qs(parsed_check.query)
+                        if "uddg" in qs:
+                            url = unquote(qs["uddg"][0])
+                        else:
+                            break
+                    else:
+                        break
+
+                # Skip ad/tracker URLs that couldn't be fully unwrapped
+                parsed_final = urlparse(url)
+                if any(ad in parsed_final.netloc.lower() for ad in ['duckduckgo.com', 'bing.com/aclick', 'spokeo.com']):
+                    continue
+
+                domain = parsed_final.netloc.lower()
+                if domain.startswith("www."):
+                    domain = domain[4:]
+
+                results.append({
+                    "rank": i + 1,
+                    "title": title,
+                    "url": url,
+                    "domain": domain
+                })
+            except Exception:
+                continue
+
+        if not results:
+            print("❌ No results found!")
+            return None
+
+        # Print all found domains
+        for r in results:
+            print(f"  #{r['rank']}  📌 Domain:  {r['domain']}")
+            print(f"       Title:   {r['title']}")
+            print(f"       URL:     {r['url']}")
+            print()
+
+        print("=" * 60)
+
+        # Filter out common non-org URLs (directories, review sites, etc.)
+        skip_domains = [
+            'yelp.com', 'facebook.com', 'twitter.com', 'linkedin.com',
+            'healthgrades.com', 'vitals.com', 'zocdoc.com', 'npidb.org',
+            'npino.com', 'npiprofile.com', 'healthcare4ppl.com',
+            'duckduckgo.com', 'google.com', 'wikipedia.org',
+            'yellowpages.com', 'bbb.org', 'indeed.com', 'glassdoor.com'
+        ]
+
+        print(results)
+
+        for r in results:
+            if any(skip in r["domain"] for skip in skip_domains):
+                continue
+            print(f"\n✅ Selected org domain: {r['domain']}\n")
+            return r["domain"]
+
+        print(f"\n⚠️ No valid org domain found — all results were directory/social sites\n")
+        return None
+
+    except Exception as e:
+        print(f"❌ Error finding org domain: {e}")
+    finally:
+        if driver:
+            try:
+                driver.quit()
+            except:
+                pass
+    return None
+
+
+def hunter_email_lookup(domain: str, first_name: str, last_name: str) -> dict:
+    """
+    Use Hunter.io Email Finder API to find a person's email at an organization.
+    Returns dict with 'email' and 'confidence' keys, or None.
+    """
+    api_key = os.getenv("HUNTER_API")
+    if not api_key:
+        print("⚠️ HUNTER_API key not found in environment")
+        return None
+    
+    try:
+        url = "https://api.hunter.io/v2/email-finder"
+        params = {
+            "domain": domain,
+            "first_name": first_name,
+            "last_name": last_name,
+            "api_key": api_key
+        }
+        
+        print(f"\n📧 Hunter.io lookup: {first_name} {last_name} @ {domain}")
+        response = requests.get(url, params=params, timeout=15)
+        response.raise_for_status()
+        
+        data = response.json()
+        
+        if data.get("data") and data["data"].get("email"):
+            email = data["data"]["email"]
+            confidence = data["data"].get("score", 0)
+            print(f"✅ Hunter found email: {email} (confidence: {confidence})")
+            return {
+                "email": email,
+                "confidence": confidence,
+                "source": "hunter.io"
+            }
+        else:
+            print(f"⚠️ Hunter.io: No email found for {first_name} {last_name} @ {domain}")
+            return None
+            
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Hunter.io API error: {e}")
+        return None
 
 class EnrichmentManager:
     def __init__(self):

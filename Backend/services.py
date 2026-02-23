@@ -6,7 +6,7 @@ from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProv
 from Validation.NPI import lookup_npi
 # from Validation.gemini_compare import compare_row_with_npi_gemini
 from Validation.groq_compare import compare_row_with_npi_groq
-from Agents.enrichment_agent_v0 import EnrichmentManager
+from Agents.enrichment_agent_v0 import EnrichmentManager, find_org_domain, hunter_email_lookup
 import json
 import logging
 from fastapi import Depends
@@ -454,6 +454,12 @@ class EnrichmentService:
             if provider_prof.telehealth is None:
                 missing_keys.append("telehealth")
 
+            if not provider.email:
+                missing_keys.append("email")
+
+            if not provider_prof.practice_name:
+                missing_keys.append("practice_name")
+
             if not missing_keys:
                 if submission:
                     submission.processing_status = "processed"
@@ -531,6 +537,49 @@ class EnrichmentService:
                 if result.get("specialties"):
                     # Assuming specialties is a list of strings
                     provider_prof.specialties = result["specialties"]
+
+                # ---- STEP 2: Hunter.io Email Lookup ----
+                # After enrichment, use the practice_name to find the org domain,
+                # then use Hunter.io to find the provider's email at that org.
+                
+                org_name = result.get("practice_name") or provider_prof.practice_name
+                
+                if org_name and not provider.email:
+                    logger.info(f"📧 Step 2: Hunter.io Email Lookup for {provider.first_name} {provider.last_name} at '{org_name}'")
+                    
+                    try:
+                        # Search for the organization's domain
+                        domain = await loop.run_in_executor(
+                            None,
+                            find_org_domain,
+                            org_name
+                        )
+                        
+                        if domain:
+                            logger.info(f"🌐 Found org domain: {domain}")
+                            
+                            # Call Hunter.io to find the email
+                            hunter_result = await loop.run_in_executor(
+                                None,
+                                hunter_email_lookup,
+                                domain,
+                                provider.first_name or "",
+                                provider.last_name or ""
+                            )
+                            
+                            if hunter_result and hunter_result.get("email"):
+                                provider.email = hunter_result["email"]
+                                logger.info(f"✅ Email found via Hunter.io: {hunter_result['email']} (confidence: {hunter_result.get('confidence')})")
+                            else:
+                                logger.info(f"⚠️ Hunter.io could not find email for {provider.first_name} {provider.last_name} @ {domain}")
+                        else:
+                            logger.info(f"⚠️ Could not find domain for org: {org_name}")
+                            
+                    except Exception as hunter_err:
+                        logger.warning(f"⚠️ Hunter email lookup failed (non-critical): {hunter_err}")
+                
+                elif provider.email:
+                    logger.info(f"📧 Email already exists: {provider.email} — skipping Hunter lookup")
 
                 if provider.meta:
                     provider.meta.status = "enriched"
