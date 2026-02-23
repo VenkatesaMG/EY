@@ -876,3 +876,189 @@ Format your response in clear, readable paragraphs suitable for display in a UI.
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+
+@app.get("/analyze/context-data")
+async def get_analysis_context(specialty: Optional[str] = None, db: AsyncSession = Depends(get_db)):
+    """
+    Fetch rich contextual data for the analysis chat, filtered by taxonomy/specialty.
+    Returns provider counts, confidence stats, status distribution, and sample provider details.
+    """
+    try:
+        # Base query for providers with their professional and meta data
+        base_stmt = select(ProviderPersonal).options(
+            selectinload(ProviderPersonal.meta),
+            selectinload(ProviderPersonal.professional)
+        )
+
+        # If specialty filter, join on professional and filter
+        if specialty:
+            base_stmt = base_stmt.join(ProviderProfessional).filter(
+                ProviderProfessional.specialties.contains([specialty])
+            )
+
+        result = await db.execute(base_stmt)
+        providers = result.scalars().all()
+
+        # --- Aggregate stats ---
+        total_count = len(providers)
+        states_map = {}
+        confidence_scores = []
+        status_counts = {"verified": 0, "needs_review": 0, "verified_by_provider": 0, "other": 0}
+        specialties_set = set()
+        provider_details = []
+
+        for p in providers:
+            prof = p.professional
+            meta = p.meta
+
+            # State distribution
+            st = (prof.state if prof else None) or p.state
+            if st:
+                states_map[st] = states_map.get(st, 0) + 1
+
+            # Confidence
+            if meta and meta.overall_confidence is not None:
+                confidence_scores.append(meta.overall_confidence)
+
+            # Status
+            if meta:
+                status_val = meta.status or "other"
+                if status_val in status_counts:
+                    status_counts[status_val] += 1
+                else:
+                    status_counts["other"] += 1
+
+            # Specialties
+            if prof and prof.specialties:
+                for s in prof.specialties:
+                    specialties_set.add(s)
+
+            # Collect provider detail (limit to 50 for context window)
+            if len(provider_details) < 50:
+                provider_details.append({
+                    "npi": p.npi,
+                    "name": p.display_name,
+                    "state": st,
+                    "specialties": prof.specialties if prof else [],
+                    "confidence": round(meta.overall_confidence, 1) if meta and meta.overall_confidence else None,
+                    "status": meta.status if meta else "unknown",
+                    "practice_name": prof.practice_name if prof else None,
+                    "city": (prof.city if prof else None) or p.city,
+                    "email": p.email,
+                    "telehealth": prof.telehealth if prof else None,
+                    "accepting_new_patients": prof.accepting_new_patients if prof else None
+                })
+
+        avg_confidence = round(sum(confidence_scores) / len(confidence_scores), 1) if confidence_scores else 0
+        top_states = sorted(states_map.items(), key=lambda x: x[1], reverse=True)[:10]
+
+        return {
+            "filter": specialty or "All Specialties",
+            "total_providers": total_count,
+            "avg_confidence": avg_confidence,
+            "min_confidence": round(min(confidence_scores), 1) if confidence_scores else 0,
+            "max_confidence": round(max(confidence_scores), 1) if confidence_scores else 0,
+            "status_distribution": status_counts,
+            "states_with_providers": len(states_map),
+            "top_states": [{"state": s, "count": c} for s, c in top_states],
+            "all_state_counts": states_map,
+            "unique_specialties": sorted(list(specialties_set)),
+            "providers": provider_details
+        }
+
+    except Exception as e:
+        logger.error(f"Error fetching analysis context: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/analyze/chat")
+async def analyze_chat(data: dict = Body(...), db: AsyncSession = Depends(get_db)):
+    """
+    Multi-turn conversational analysis endpoint.
+    Accepts conversation history and injects relevant context data based on the selected taxonomy.
+    """
+    try:
+        from Validation.groq_client import generate_text
+        from groq import Groq
+
+        messages = data.get("messages", [])  # [{role, content}, ...]
+        specialty = data.get("specialty", None)
+        context_data = data.get("context_data", {})  # Pre-fetched context
+
+        if not messages:
+            raise HTTPException(status_code=400, detail="No messages provided")
+
+        # Build system prompt with injected context
+        system_prompt = f"""You are an expert healthcare data analyst assistant for HealthValidator.ai — a platform that validates, enriches, and manages healthcare provider data.
+
+You have access to the following LIVE DATA from the platform's database. Use this data to answer questions accurately and provide actionable insights.
+
+=== CURRENT DATA CONTEXT ===
+Filter: {context_data.get('filter', 'All Specialties')}
+Total Providers: {context_data.get('total_providers', 0)}
+Average Confidence Score: {context_data.get('avg_confidence', 0)}%
+Min Confidence: {context_data.get('min_confidence', 0)}% | Max Confidence: {context_data.get('max_confidence', 0)}%
+States with Providers: {context_data.get('states_with_providers', 0)}
+
+Status Distribution:
+{json.dumps(context_data.get('status_distribution', {}), indent=2)}
+
+Top States by Provider Count:
+{json.dumps(context_data.get('top_states', []), indent=2)}
+
+All State Counts:
+{json.dumps(context_data.get('all_state_counts', {}), indent=2)}
+
+Unique Specialties in Dataset:
+{json.dumps(context_data.get('unique_specialties', []), indent=2)}
+
+Provider Details (sample up to 50):
+{json.dumps(context_data.get('providers', []), indent=2)}
+=== END DATA CONTEXT ===
+
+IMPORTANT GUIDELINES:
+- Ground your analysis in the actual data provided above.
+- When the user asks about specific states, providers, or specialties, reference the real data.
+- Provide specific numbers, percentages, and comparisons when possible.
+- If the user asks about data you don't have, clearly state that.
+- Keep responses concise but insightful. Use bullet points and bold text for readability.
+- You can suggest follow-up questions the user might want to ask.
+- Format your response with markdown for readability (bold, bullets, headers).
+"""
+
+        # Build Groq message array
+        groq_messages = [{"role": "system", "content": system_prompt}]
+        for msg in messages:
+            groq_messages.append({
+                "role": msg.get("role", "user"),
+                "content": msg.get("content", "")
+            })
+
+        # Call Groq with the full conversation
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        completion = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=groq_messages,
+            temperature=0.7,
+            max_tokens=4096,
+            top_p=1,
+            stream=False
+        )
+
+        response_text = completion.choices[0].message.content
+
+        return {
+            "success": True,
+            "response": response_text
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chat analysis error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")

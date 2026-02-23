@@ -1,6 +1,6 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Sparkles, MapPin, Maximize, Minimize } from 'lucide-react';
+import { Loader2, Sparkles, MapPin, Maximize, Minimize, Send, MessageSquare, RotateCcw, Bot, User } from 'lucide-react';
 import {
     ComposableMap,
     Geographies,
@@ -47,24 +47,70 @@ const stateNames = {
     'DC': 'District of Columbia'
 };
 
+// Simple markdown renderer
+const renderMarkdown = (text) => {
+    if (!text) return '';
+
+    return text
+        // Headers
+        .replace(/^### (.*$)/gim, '<h5 class="md-h5">$1</h5>')
+        .replace(/^## (.*$)/gim, '<h4 class="md-h4">$1</h4>')
+        .replace(/^# (.*$)/gim, '<h3 class="md-h3">$1</h3>')
+        // Bold
+        .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
+        // Italic
+        .replace(/\*(.*?)\*/gim, '<em>$1</em>')
+        // Unordered lists
+        .replace(/^\- (.*$)/gim, '<li>$1</li>')
+        .replace(/^\* (.*$)/gim, '<li>$1</li>')
+        // Ordered lists
+        .replace(/^\d+\. (.*$)/gim, '<li>$1</li>')
+        // Line breaks
+        .replace(/\n\n/gim, '</p><p>')
+        .replace(/\n/gim, '<br/>');
+};
+
+const SUGGESTED_PROMPTS = [
+    "What are the key trends in provider distribution?",
+    "Which states need more coverage?",
+    "How is the data quality across providers?",
+    "Compare top vs bottom performing states",
+    "What specialties are underrepresented?"
+];
+
 const USMapAnalysis = () => {
     const [hoveredFIPS, setHoveredFIPS] = useState(null);
     const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
     const [mapRef, setMapRef] = useState(null);
     const [containerRef, setContainerRef] = useState(null);
-    const [analysisResult, setAnalysisResult] = useState(null);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
 
     // Filter State
     const [specialties, setSpecialties] = useState([]);
     const [selectedSpecialty, setSelectedSpecialty] = useState("");
 
     // UI State
-    const [showAnalysisPanel, setShowAnalysisPanel] = useState(false);
+    const [showChatPanel, setShowChatPanel] = useState(false);
     const [isFullscreen, setIsFullscreen] = useState(false);
 
     // Real Data State
     const [stateStats, setStateStats] = useState({});
+
+    // Chat State
+    const [chatMessages, setChatMessages] = useState([]);
+    const [chatInput, setChatInput] = useState("");
+    const [isSending, setIsSending] = useState(false);
+    const [contextData, setContextData] = useState(null);
+    const [isLoadingContext, setIsLoadingContext] = useState(false);
+
+    const chatEndRef = useRef(null);
+    const inputRef = useRef(null);
+
+    // Auto-scroll to bottom of chat
+    useEffect(() => {
+        if (chatEndRef.current) {
+            chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+        }
+    }, [chatMessages]);
 
     // Fetch Specialties
     useEffect(() => {
@@ -75,7 +121,7 @@ const USMapAnalysis = () => {
     }, []);
 
     // Fetch Real Data
-    React.useEffect(() => {
+    useEffect(() => {
         const fetchData = async () => {
             try {
                 const url = selectedSpecialty
@@ -85,7 +131,6 @@ const USMapAnalysis = () => {
                 const res = await fetch(url);
                 const counts = await res.json();
 
-                // Merge with static metadata
                 const mergedData = {};
                 Object.keys(stateAbbrToFIPS).forEach(abbr => {
                     const count = counts[abbr] || 0;
@@ -106,8 +151,44 @@ const USMapAnalysis = () => {
         return () => clearInterval(interval);
     }, [selectedSpecialty]);
 
+    // Fetch context data when specialty changes (while chat is open)
+    const fetchContextData = useCallback(async () => {
+        setIsLoadingContext(true);
+        try {
+            const url = selectedSpecialty
+                ? `http://localhost:8000/analyze/context-data?specialty=${encodeURIComponent(selectedSpecialty)}`
+                : 'http://localhost:8000/analyze/context-data';
+            const res = await fetch(url);
+            const data = await res.json();
+            setContextData(data);
+            return data;
+        } catch (e) {
+            console.error("Failed to fetch context data", e);
+            return null;
+        } finally {
+            setIsLoadingContext(false);
+        }
+    }, [selectedSpecialty]);
+
+    // When specialty changes and chat is open, refresh context and notify
+    useEffect(() => {
+        if (showChatPanel && chatMessages.length > 0) {
+            fetchContextData().then(newContext => {
+                if (newContext) {
+                    setChatMessages(prev => [
+                        ...prev,
+                        {
+                            role: 'system_notice',
+                            content: `Context updated: Now showing data for "${newContext.filter}" — ${newContext.total_providers} providers across ${newContext.states_with_providers} states.`
+                        }
+                    ]);
+                }
+            });
+        }
+    }, [selectedSpecialty]); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Handle Fullscreen changes
-    React.useEffect(() => {
+    useEffect(() => {
         const handleFullscreenChange = () => {
             setIsFullscreen(!!document.fullscreenElement);
         };
@@ -135,12 +216,12 @@ const USMapAnalysis = () => {
         return scaleQuantize()
             .domain([minCount, maxCount || 1])
             .range([
-                "#dbeafe", // lightest blue
+                "#dbeafe",
                 "#bfdbfe",
                 "#93c5fd",
                 "#60a5fa",
-                "#3b82f6", // medium blue
-                "#1d4ed8"  // darkest blue
+                "#3b82f6",
+                "#1d4ed8"
             ]);
     }, [stateStats]);
 
@@ -150,8 +231,6 @@ const USMapAnalysis = () => {
             const rect = mapRef.getBoundingClientRect();
             const x = event.clientX - rect.left;
             const y = event.clientY - rect.top;
-
-            // Check if we are past 60% of the width
             const isNearRight = x > (rect.width * 0.6);
 
             setTooltipPosition({
@@ -162,61 +241,88 @@ const USMapAnalysis = () => {
         }
     }, [mapRef]);
 
-    const handleAnalyzeToggle = async () => {
-        const willShow = !showAnalysisPanel;
-        setShowAnalysisPanel(willShow);
+    // Open chat panel with automatic first analysis
+    const handleOpenChat = async () => {
+        const willShow = !showChatPanel;
+        setShowChatPanel(willShow);
 
-        // If opening and no result, fetch it automatically
-        if (willShow && !analysisResult && !isAnalyzing) {
-            handleRunAnalysis();
+        if (willShow && chatMessages.length === 0) {
+            // Fetch context and send initial analysis
+            const ctx = await fetchContextData();
+            if (ctx) {
+                const initialMsg = { role: 'user', content: 'Give me a comprehensive overview and key insights about the current provider data.' };
+                setChatMessages([initialMsg]);
+                await sendMessage([initialMsg], ctx);
+            }
         }
     };
 
-    const handleRunAnalysis = async () => {
-        setIsAnalyzing(true);
-        setAnalysisResult(null);
-
+    // Send a message to the chat endpoint
+    const sendMessage = async (messages, ctx = null) => {
+        setIsSending(true);
         try {
-            // Prepare Real Data for Analysis
-            const activeStates = Object.entries(stateStats)
-                .filter(([_, data]) => data.count > 0)
-                .map(([abbr, data]) => ({
-                    state: data.name,
-                    abbr: abbr,
-                    submissions: data.count
-                }))
-                .sort((a, b) => b.submissions - a.submissions);
-
-            const summary = {
-                totalStates: activeStates.length,
-                totalSubmissions: activeStates.reduce((acc, curr) => acc + curr.submissions, 0),
-                totalProviders: activeStates.reduce((acc, curr) => acc + curr.submissions, 0),
-                topStates: activeStates.slice(0, 5),
-                filter: selectedSpecialty || "All Specialties"
-            };
-
-            const res = await fetch('http://localhost:8000/analyze/map-data', {
+            const currentContext = ctx || contextData;
+            const res = await fetch('http://localhost:8000/analyze/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    summary,
-                    states: activeStates
+                    messages: messages.filter(m => m.role === 'user' || m.role === 'assistant'),
+                    specialty: selectedSpecialty || null,
+                    context_data: currentContext || {}
                 })
             });
 
             const result = await res.json();
             if (result.success) {
-                setAnalysisResult(result.analysis);
+                setChatMessages(prev => [
+                    ...prev,
+                    { role: 'assistant', content: result.response }
+                ]);
             } else {
-                setAnalysisResult("Analysis failed to generate insights.");
+                setChatMessages(prev => [
+                    ...prev,
+                    { role: 'assistant', content: 'Sorry, I was unable to generate a response. Please try again.' }
+                ]);
             }
-
         } catch (e) {
-            console.error("Analysis failed", e);
-            setAnalysisResult("Error connecting to analysis service.");
+            console.error("Chat error", e);
+            setChatMessages(prev => [
+                ...prev,
+                { role: 'assistant', content: 'Connection error. Please check that the server is running.' }
+            ]);
         } finally {
-            setIsAnalyzing(false);
+            setIsSending(false);
         }
+    };
+
+    // Handle user sending a message
+    const handleSendMessage = async (customMessage = null) => {
+        const message = customMessage || chatInput.trim();
+        if (!message || isSending) return;
+
+        const userMsg = { role: 'user', content: message };
+        const newMessages = [...chatMessages, userMsg];
+        setChatMessages(newMessages);
+        setChatInput("");
+
+        // Focus back on input
+        if (inputRef.current) inputRef.current.focus();
+
+        await sendMessage(newMessages);
+    };
+
+    // Handle key press in input
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            handleSendMessage();
+        }
+    };
+
+    // Reset chat
+    const handleResetChat = () => {
+        setChatMessages([]);
+        setContextData(null);
     };
 
     const toggleFullScreen = () => {
@@ -292,8 +398,8 @@ const USMapAnalysis = () => {
             {/* Layout Wrapper: Full or Split */}
             <div className="map-analysis-layout" style={{
                 display: 'grid',
-                gridTemplateColumns: showAnalysisPanel ? '3fr 1fr' : '1fr',
-                gap: showAnalysisPanel ? '1.5rem' : '0',
+                gridTemplateColumns: showChatPanel ? '1fr 1fr' : '1fr',
+                gap: showChatPanel ? '1.5rem' : '0',
                 height: isFullscreen ? '100%' : 'auto',
                 transition: 'all 0.4s ease'
             }}>
@@ -304,8 +410,9 @@ const USMapAnalysis = () => {
                         className="map-container"
                         onMouseMove={handleMouseMove}
                         style={{
-                            height: isFullscreen ? '100%' : '550px',
-                            minHeight: isFullscreen ? '0' : '550px'
+                            height: isFullscreen ? '100%' : showChatPanel ? '450px' : '550px',
+                            minHeight: isFullscreen ? '0' : showChatPanel ? '400px' : '550px',
+                            transition: 'all 0.3s ease'
                         }}
                     >
                         {/* Control Buttons Overlay */}
@@ -376,9 +483,6 @@ const USMapAnalysis = () => {
                                             const abbr = fipsToAbbr[hoveredFIPS];
                                             if (!abbr) return null;
 
-                                            // Fallback point if geometry logic fails or simple check
-                                            // Ideally use centroid, here using a simplified check for robustness
-                                            // For now, skipping complex centroid content to keep it simple as before
                                             const geometry = geo.geometry;
                                             if (!geometry) return null;
                                             let candidatePoint = [0, 0];
@@ -469,23 +573,23 @@ const USMapAnalysis = () => {
                         <div className="analyze-section" style={{ marginLeft: 'auto' }}>
                             <button
                                 className="analyze-button"
-                                onClick={handleAnalyzeToggle}
-                                disabled={isAnalyzing && !showAnalysisPanel}
+                                onClick={handleOpenChat}
+                                disabled={isSending && !showChatPanel}
                                 style={{
-                                    background: showAnalysisPanel ? 'hsl(228, 12%, 18%)' : 'hsl(var(--primary))',
-                                    color: showAnalysisPanel ? 'hsl(var(--foreground))' : 'white',
-                                    border: showAnalysisPanel ? '1px solid hsl(var(--border))' : 'none'
+                                    background: showChatPanel ? 'hsl(228, 12%, 18%)' : 'linear-gradient(135deg, hsl(var(--primary)), #8b5cf6)',
+                                    color: showChatPanel ? 'hsl(var(--foreground))' : 'white',
+                                    border: showChatPanel ? '1px solid hsl(var(--border))' : 'none'
                                 }}
                             >
-                                {isAnalyzing ? (
+                                {isLoadingContext && !showChatPanel ? (
                                     <>
                                         <Loader2 size={18} className="spinning" />
-                                        Analyzing...
+                                        Loading...
                                     </>
                                 ) : (
                                     <>
-                                        <Sparkles size={18} />
-                                        {showAnalysisPanel ? 'Close Analysis' : 'Analyze Map'}
+                                        <MessageSquare size={18} />
+                                        {showChatPanel ? 'Close Chat' : 'AI Analysis Chat'}
                                     </>
                                 )}
                             </button>
@@ -493,57 +597,164 @@ const USMapAnalysis = () => {
                     </div>
                 </div>
 
+                {/* Chat Panel */}
                 <AnimatePresence>
-                    {showAnalysisPanel && (
+                    {showChatPanel && (
                         <motion.div
-                            className="analysis-section-side"
-                            initial={{ opacity: 0, x: 20 }}
-                            animate={{ opacity: 1, x: 0 }}
-                            exit={{ opacity: 0, x: 20 }}
-                            style={{
-                                height: '100%',
-                                overflowY: 'hidden',
-                                display: 'flex',
-                                flexDirection: 'column'
-                            }}
+                            className="chat-panel"
+                            initial={{ opacity: 0, x: 30, scale: 0.95 }}
+                            animate={{ opacity: 1, x: 0, scale: 1 }}
+                            exit={{ opacity: 0, x: 30, scale: 0.95 }}
+                            transition={{ duration: 0.3, ease: 'easeOut' }}
                         >
-                            {analysisResult ? (
-                                <motion.div
-                                    className="analysis-result"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    style={{ height: '100%', borderRadius: 'var(--radius-md)' }}
+                            {/* Chat Header */}
+                            <div className="chat-header">
+                                <div className="chat-header-left">
+                                    <div className="chat-header-icon">
+                                        <Sparkles size={18} />
+                                    </div>
+                                    <div>
+                                        <h4>AI Analysis</h4>
+                                        <span className="chat-context-label">
+                                            {contextData ? contextData.filter : 'Loading...'}
+                                            {contextData && ` · ${contextData.total_providers} providers`}
+                                        </span>
+                                    </div>
+                                </div>
+                                <button
+                                    className="chat-reset-btn"
+                                    onClick={handleResetChat}
+                                    title="New conversation"
                                 >
-                                    <div className="analysis-header-section">
-                                        <Sparkles size={20} color="#3b82f6" />
-                                        <h4>Strategic Insights</h4>
+                                    <RotateCcw size={16} />
+                                </button>
+                            </div>
+
+                            {/* Chat Messages */}
+                            <div className="chat-messages">
+                                {chatMessages.length === 0 && !isSending && (
+                                    <div className="chat-empty-state">
+                                        <div className="chat-empty-icon">
+                                            <Bot size={32} />
+                                        </div>
+                                        <h5>Healthcare Data Analyst</h5>
+                                        <p>Ask me anything about your provider data, geographic distribution, or data quality metrics.</p>
+                                        <div className="suggested-prompts">
+                                            {SUGGESTED_PROMPTS.slice(0, 3).map((prompt, i) => (
+                                                <button
+                                                    key={i}
+                                                    className="suggested-prompt-btn"
+                                                    onClick={() => handleSendMessage(prompt)}
+                                                >
+                                                    {prompt}
+                                                </button>
+                                            ))}
+                                        </div>
                                     </div>
-                                    <div className="analysis-content">
-                                        {analysisResult}
-                                    </div>
-                                </motion.div>
-                            ) : (
-                                <motion.div
-                                    className="analysis-placeholder"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    style={{ height: '100%' }}
-                                >
-                                    <div style={{
-                                        display: 'flex',
-                                        flexDirection: 'column',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        height: '100%',
-                                        padding: '2rem',
-                                        textAlign: 'center',
-                                        color: 'hsl(228, 8%, 55%)'
-                                    }}>
-                                        <Loader2 size={32} className="spinning" style={{ marginBottom: '1rem', opacity: 0.5 }} />
-                                        <p>Generating insights...</p>
-                                    </div>
-                                </motion.div>
+                                )}
+
+                                {chatMessages.map((msg, idx) => (
+                                    <motion.div
+                                        key={idx}
+                                        className={`chat-message ${msg.role}`}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ duration: 0.2, delay: 0.05 }}
+                                    >
+                                        {msg.role === 'system_notice' ? (
+                                            <div className="system-notice">
+                                                <Sparkles size={14} />
+                                                <span>{msg.content}</span>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <div className="message-avatar">
+                                                    {msg.role === 'user' ? (
+                                                        <User size={16} />
+                                                    ) : (
+                                                        <Bot size={16} />
+                                                    )}
+                                                </div>
+                                                <div className="message-body">
+                                                    <div className="message-role">
+                                                        {msg.role === 'user' ? 'You' : 'AI Analyst'}
+                                                    </div>
+                                                    <div
+                                                        className="message-content"
+                                                        dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }}
+                                                    />
+                                                </div>
+                                            </>
+                                        )}
+                                    </motion.div>
+                                ))}
+
+                                {isSending && (
+                                    <motion.div
+                                        className="chat-message assistant"
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                    >
+                                        <div className="message-avatar">
+                                            <Bot size={16} />
+                                        </div>
+                                        <div className="message-body">
+                                            <div className="message-role">AI Analyst</div>
+                                            <div className="typing-indicator">
+                                                <span></span>
+                                                <span></span>
+                                                <span></span>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                )}
+
+                                <div ref={chatEndRef} />
+                            </div>
+
+                            {/* Suggested Follow-ups (show after first exchange) */}
+                            {chatMessages.length >= 2 && !isSending && (
+                                <div className="chat-suggestions-bar">
+                                    {SUGGESTED_PROMPTS.filter(p => !chatMessages.find(m => m.content === p))
+                                        .slice(0, 2)
+                                        .map((prompt, i) => (
+                                            <button
+                                                key={i}
+                                                className="suggestion-chip"
+                                                onClick={() => handleSendMessage(prompt)}
+                                            >
+                                                {prompt}
+                                            </button>
+                                        ))}
+                                </div>
                             )}
+
+                            {/* Chat Input */}
+                            <div className="chat-input-area">
+                                <div className="chat-input-wrapper">
+                                    <input
+                                        ref={inputRef}
+                                        type="text"
+                                        className="chat-input"
+                                        placeholder="Ask about your provider data..."
+                                        value={chatInput}
+                                        onChange={(e) => setChatInput(e.target.value)}
+                                        onKeyDown={handleKeyDown}
+                                        disabled={isSending}
+                                    />
+                                    <button
+                                        className="chat-send-btn"
+                                        onClick={() => handleSendMessage()}
+                                        disabled={!chatInput.trim() || isSending}
+                                    >
+                                        {isSending ? (
+                                            <Loader2 size={18} className="spinning" />
+                                        ) : (
+                                            <Send size={18} />
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
                         </motion.div>
                     )}
                 </AnimatePresence>
