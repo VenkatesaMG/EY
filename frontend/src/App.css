@@ -684,6 +684,12 @@ select option {
   border: 1px solid hsl(var(--info) / 0.3);
 }
 
+.badge.self_verified {
+  background: hsla(270, 80%, 60%, 0.12);
+  color: hsl(270, 80%, 70%);
+  border: 1px solid hsla(270, 80%, 60%, 0.3);
+}
+
 /* ============================================
    Provider Detail Page
    ============================================ */

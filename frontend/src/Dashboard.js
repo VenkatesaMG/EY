@@ -9,7 +9,7 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
     const [error, setError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [verifyingEmail, setVerifyingEmail] = useState(null);
-    const [seedLoading, setSeedLoading] = useState(false);
+
 
     const fetchProviders = async (isRefresh = false) => {
         if (isRefresh) setRefreshing(true);
@@ -39,31 +39,7 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
         fetchProviders(true);
     };
 
-    const handleSeedMockData = async () => {
-        setSeedLoading(true);
-        try {
-            const response = await fetch('http://localhost:8000/providers/seed-mock-data', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                }
-            });
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-                throw new Error(errorData.detail || `HTTP ${response.status}: Failed to seed mock data`);
-            }
-            const data = await response.json();
-            alert(`Successfully added ${data.count} mock providers!`);
-            setTimeout(() => {
-                fetchProviders(true);
-            }, 500);
-        } catch (err) {
-            console.error("Failed to seed mock data", err);
-            alert(`Error: ${err.message}`);
-        } finally {
-            setSeedLoading(false);
-        }
-    };
+
 
     const handleVerifyEmail = async (providerId) => {
         setVerifyingEmail(providerId);
@@ -199,7 +175,7 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                                         transition={{ delay: index * 0.03 }}
                                     >
                                         <td>
-                                            <span className={`badge ${p.status === 'verified_by_provider' ? 'verified' : p.status}`}>
+                                            <span className={`badge ${p.status === 'verified_by_provider' ? 'self_verified' : p.status}`}>
                                                 {p.status === 'needs_review' ? 'Review' :
                                                     p.status === 'verified_by_provider' ? 'Self-Verified' :
                                                         (p.status || 'Pending')}
@@ -278,10 +254,7 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                     </p>
                 </div>
                 <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', flexWrap: 'wrap' }}>
-                    <button onClick={handleSeedMockData} className="submit-btn" disabled={seedLoading} style={{ width: 'auto', padding: '0.5rem 1rem', background: 'hsl(160, 84%, 39%)' }}>
-                        {seedLoading ? <Loader2 size={16} className="spin" /> : <Users size={16} />}
-                        <span style={{ marginLeft: '0.5rem' }}>Seed Data</span>
-                    </button>
+
                     {onNavigateToAnalysis && (
                         <button onClick={onNavigateToAnalysis} className="submit-btn" style={{ width: 'auto', padding: '0.5rem 1rem', background: 'hsl(217, 91%, 60%)' }}>
                             <Map size={16} /><span style={{ marginLeft: '0.5rem' }}>Analysis</span>

@@ -644,11 +644,10 @@ class EnrichmentService:
                     logger.info(f"📧 Email already exists: {provider.email} — skipping Hunter lookup")
 
                 if provider.meta:
-                    new_status = "enriched"
+                    new_status = "verified"
                     # Reset manual review if we found keys
                     if provider.meta.manual_review_required and (result.get("phone") or result.get("website")):
                          provider.meta.manual_review_required = False
-                         new_status = "verified"
                     log_field_change(db, npi, 'status', provider.meta.status, new_status, 'enrichment', 'meta')
                     provider.meta.status = new_status
                     
