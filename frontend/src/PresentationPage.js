@@ -25,55 +25,59 @@ function SlideHeader({ icon: Icon, title, subtitle, color }) {
 }
 function StatCard({ value, label, color, icon: Icon }) {
     return (
-        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 14, padding: '1.25rem', textAlign: 'center' }}>
-            <Icon size={22} color={color} style={{ marginBottom: '0.4rem' }} />
-            <div style={{ fontSize: '1.75rem', fontWeight: 800, color, letterSpacing: '-0.03em' }}>{value}</div>
-            <div style={{ fontSize: '0.75rem', color: 'hsl(228,8%,55%)', marginTop: '0.2rem', lineHeight: 1.4 }}>{label}</div>
+        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 14, padding: '1.5rem 1.25rem', textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <Icon size={26} color={color} style={{ marginBottom: '0.5rem' }} />
+            <div style={{ fontSize: '2.2rem', fontWeight: 800, color, letterSpacing: '-0.03em', lineHeight: 1.1 }}>{value}</div>
+            <div style={{ fontSize: '0.8rem', color: 'hsl(228,8%,55%)', marginTop: '0.35rem', lineHeight: 1.4 }}>{label}</div>
         </div>
     );
 }
 function ArchBox({ title, color, items }) {
     return (
-        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 14, padding: '1.25rem', borderTop: `3px solid ${color}` }}>
-            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.75rem', color }}>{title}</h3>
-            {items.map((item, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.35rem 0', fontSize: '0.825rem', color: 'hsl(228,8%,65%)' }}>
-                    <div style={{ width: 5, height: 5, borderRadius: '50%', background: color, flexShrink: 0 }} />
-                    {item}
-                </div>
-            ))}
+        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 14, padding: '1.25rem', borderTop: `3px solid ${color}`, flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <h3 style={{ fontSize: '0.95rem', fontWeight: 700, marginBottom: '0.6rem', color }}>{title}</h3>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly' }}>
+                {items.map((item, i) => (
+                    <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.4rem 0', fontSize: '0.85rem', color: 'hsl(228,8%,65%)' }}>
+                        <div style={{ width: 5, height: 5, borderRadius: '50%', background: color, flexShrink: 0 }} />
+                        {item}
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
 function TechGroup({ title, color, items }) {
     return (
-        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 12, padding: '1rem' }}>
-            <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color, marginBottom: '0.6rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</h4>
-            {items.map((item, i) => (
-                <div key={i} style={{ padding: '0.4rem 0', borderBottom: i < items.length - 1 ? '1px solid hsl(228,12%,16%)' : 'none' }}>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'hsl(0,0%,90%)' }}>{item.name}</div>
-                    <div style={{ fontSize: '0.725rem', color: 'hsl(228,8%,50%)' }}>{item.why}</div>
-                </div>
-            ))}
+        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 12, padding: '1rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <h4 style={{ fontSize: '0.85rem', fontWeight: 700, color, marginBottom: '0.5rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{title}</h4>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-evenly' }}>
+                {items.map((item, i) => (
+                    <div key={i} style={{ padding: '0.45rem 0', borderBottom: i < items.length - 1 ? '1px solid hsl(228,12%,16%)' : 'none' }}>
+                        <div style={{ fontSize: '0.9rem', fontWeight: 600, color: 'hsl(0,0%,90%)' }}>{item.name}</div>
+                        <div style={{ fontSize: '0.75rem', color: 'hsl(228,8%,50%)' }}>{item.why}</div>
+                    </div>
+                ))}
+            </div>
         </div>
     );
 }
 function ImpactCard({ stakeholder, benefit, icon: Icon, color }) {
     return (
-        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 14, padding: '1.25rem', display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', gap: '0.75rem' }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon size={22} color={color} />
+        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 14, padding: '1.5rem', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', gap: '0.75rem', flex: 1 }}>
+            <div style={{ width: 50, height: 50, borderRadius: 14, background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon size={24} color={color} />
             </div>
-            <div style={{ fontWeight: 700, fontSize: '0.95rem' }}>{stakeholder}</div>
-            <div style={{ fontSize: '0.825rem', color: 'hsl(228,8%,55%)', lineHeight: 1.5 }}>{benefit}</div>
+            <div style={{ fontWeight: 700, fontSize: '1.05rem' }}>{stakeholder}</div>
+            <div style={{ fontSize: '0.875rem', color: 'hsl(228,8%,55%)', lineHeight: 1.5 }}>{benefit}</div>
         </div>
     );
 }
 function MiniStat({ value, label, color }) {
     return (
-        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 10, padding: '0.85rem', textAlign: 'center' }}>
-            <div style={{ fontSize: '1.1rem', fontWeight: 800, color }}>{value}</div>
-            <div style={{ fontSize: '0.7rem', color: 'hsl(228,8%,50%)', marginTop: 2 }}>{label}</div>
+        <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 10, padding: '1rem 0.85rem', textAlign: 'center', flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ fontSize: '1.25rem', fontWeight: 800, color }}>{value}</div>
+            <div style={{ fontSize: '0.72rem', color: 'hsl(228,8%,50%)', marginTop: 3 }}>{label}</div>
         </div>
     );
 }
@@ -88,7 +92,7 @@ const slides = [
         id: 'problem-solution',
         category: 'CORE',
         render: () => (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
                     <div style={{ width: 44, height: 44, borderRadius: 12, background: '#3b82f618', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <Shield size={22} color="#3b82f6" />
@@ -99,15 +103,15 @@ const slides = [
                     </div>
                 </div>
                 {/* Problem stats */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem' }}>
                     <StatCard value="52%" label="Provider directories have inaccuracies" color="#ef4444" icon={Activity} />
                     <StatCard value="$100/day" label="CMS fine per violation per provider" color="#f59e0b" icon={BarChart3} />
                     <StatCard value="10M+" label="Providers in NPPES Registry" color="#3b82f6" icon={Users} />
                 </div>
                 {/* Our solution pipeline */}
-                <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 14, padding: '1.25rem', flex: 1 }}>
-                    <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.75rem', color: '#60a5fa' }}>🚀 Our Solution — Complete Lifecycle</h3>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem' }}>
+                <div style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 14, padding: '1.25rem', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                    <h3 style={{ fontSize: '1rem', fontWeight: 600, marginBottom: '0.6rem', color: '#60a5fa' }}>🚀 Our Solution — Complete Lifecycle</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', flex: 1, alignContent: 'space-evenly' }}>
                         {[
                             { icon: FileCheck, label: 'Multi-modal Ingestion', desc: 'Form, PDF/OCR, CSV batch', color: '#3b82f6' },
                             { icon: Shield, label: 'NPI Verification', desc: 'Real-time NPPES Registry lookup', color: '#8b5cf6' },
@@ -116,11 +120,11 @@ const slides = [
                             { icon: Mail, label: 'Provider Verification', desc: 'Email-based self-service portal', color: '#f59e0b' },
                             { icon: Lock, label: 'Governance & Audit', desc: 'Field-level audit trail + scoring', color: '#ef4444' },
                         ].map((s, i) => (
-                            <div key={i} style={{ display: 'flex', gap: '0.6rem', alignItems: 'center', padding: '0.5rem 0.6rem', borderRadius: 8, background: `${s.color}08` }}>
-                                <s.icon size={16} color={s.color} style={{ flexShrink: 0 }} />
+                            <div key={i} style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', padding: '0.65rem 0.75rem', borderRadius: 10, background: `${s.color}0a`, border: `1px solid ${s.color}15` }}>
+                                <s.icon size={18} color={s.color} style={{ flexShrink: 0 }} />
                                 <div>
-                                    <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{s.label}</div>
-                                    <div style={{ fontSize: '0.72rem', color: 'hsl(228,8%,50%)' }}>{s.desc}</div>
+                                    <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>{s.label}</div>
+                                    <div style={{ fontSize: '0.75rem', color: 'hsl(228,8%,50%)' }}>{s.desc}</div>
                                 </div>
                             </div>
                         ))}
@@ -135,20 +139,20 @@ const slides = [
         id: 'architecture-innovation',
         category: 'CORE',
         render: () => (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                 <SlideHeader icon={Cpu} title="Architecture & Innovation" subtitle="Multi-Agent AI System — What Makes Us Unique" color="#8b5cf6" />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
                     <ArchBox title="4 AI Agents" color="#f59e0b" items={['🔍 Extractor — OCR + LLM (PDF/Image → JSON)', '🌐 Enrichment — DuckDuckGo + Selenium + Hunter.io', '✉️ Email — SMTP token-based verification', '📊 Network Gap — ReAct agent + geodesic analysis']} />
                     <ArchBox title="Tech Stack" color="#3b82f6" items={['Frontend: React 19 + Framer Motion + D3 Maps', 'Backend: FastAPI (async) + SQLAlchemy 2.0', 'LLM: Groq Cloud — Llama 3.3 70B (~200 tok/s)', 'DB: PostgreSQL (6 tables) + asyncpg']} />
                 </div>
                 {/* Key innovations */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', flex: 1 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', flex: 1, alignContent: 'stretch' }}>
                     {[
                         { title: 'Hybrid Validation', desc: 'Levenshtein + Jaccard + LLM semantic analysis combined', icon: Shield, color: '#06b6d4' },
                         { title: 'Closed-Loop Verification', desc: 'Providers self-correct via secure email portal', icon: Mail, color: '#10b981' },
                         { title: 'Auto Enrichment', desc: 'Don\'t just flag gaps — actively find missing data from the web', icon: Search, color: '#f59e0b' },
                     ].map((item, i) => (
-                        <div key={i} style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 12, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <div key={i} style={{ background: 'hsl(228,12%,11%)', border: '1px solid hsl(228,12%,18%)', borderRadius: 12, padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.5rem', justifyContent: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                                 <item.icon size={16} color={item.color} />
                                 <span style={{ fontWeight: 700, fontSize: '0.9rem', color: item.color }}>{item.title}</span>
@@ -172,14 +176,14 @@ const slides = [
         id: 'impact',
         category: 'CORE',
         render: () => (
-            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            <div style={{ height: '100%', display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
                 <SlideHeader icon={Users} title="Impact & End-User Benefit" subtitle="Who Benefits, How It Scales" color="#10b981" />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '1rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.75rem', flex: 1 }}>
                     <ImpactCard stakeholder="Health Plan Ops" benefit="Saves hundreds of man-hours per directory update cycle" icon={BarChart3} color="#3b82f6" />
                     <ImpactCard stakeholder="Compliance Teams" benefit="Full audit trail for CMS audits & No Surprises Act" icon={Shield} color="#10b981" />
                     <ImpactCard stakeholder="Patients" benefit="Right doctor, right location, first try — no more misdirection" icon={Users} color="#ec4899" />
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.75rem' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '0.6rem' }}>
                     <MiniStat value="Seconds" label="Per-provider validation (was hours)" color="#3b82f6" />
                     <MiniStat value="Auto-fill" label="Missing email, phone, website" color="#10b981" />
                     <MiniStat value="< 70%" label="Auto-flags for human review" color="#f59e0b" />
@@ -392,10 +396,10 @@ const PresentationPage = () => {
 
     return (
         <div style={{
-            height: isFullscreen ? '100vh' : 'calc(100vh - 180px)',
+            height: isFullscreen ? '100vh' : 'calc(100vh - 140px)',
             display: 'flex', flexDirection: 'column',
             background: isFullscreen ? 'hsl(228,15%,6%)' : 'transparent',
-            ...(isFullscreen ? { position: 'fixed', inset: 0, zIndex: 9999, padding: '1.5rem' } : {})
+            ...(isFullscreen ? { position: 'fixed', inset: 0, zIndex: 9999, padding: '1rem 1.5rem' } : {})
         }}>
             {/* Top bar */}
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem', flexShrink: 0 }}>
@@ -430,21 +434,21 @@ const PresentationPage = () => {
             </div>
 
             {/* Progress */}
-            <div style={{ height: 3, background: 'hsl(228,12%,14%)', borderRadius: 2, marginBottom: '1rem', flexShrink: 0, overflow: 'hidden' }}>
+            <div style={{ height: 3, background: 'hsl(228,12%,14%)', borderRadius: 2, marginBottom: '0.5rem', flexShrink: 0, overflow: 'hidden' }}>
                 <motion.div style={{ height: '100%', borderRadius: 2, background: isCore ? '#3b82f6' : isDemo ? '#10b981' : 'hsl(228,8%,35%)' }} animate={{ width: `${((current + 1) / total) * 100}%` }} transition={{ duration: 0.4, ease: 'easeInOut' }} />
             </div>
 
             {/* Content */}
-            <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
+            <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
                 <AnimatePresence mode="wait">
-                    <motion.div key={current} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} transition={{ duration: 0.35, ease: 'easeInOut' }} style={{ height: '100%', padding: '0.5rem' }}>
+                    <motion.div key={current} initial={{ opacity: 0, x: 40 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -40 }} transition={{ duration: 0.35, ease: 'easeInOut' }} style={{ height: '100%', padding: '0.25rem 0.25rem' }}>
                         {slide.render()}
                     </motion.div>
                 </AnimatePresence>
             </div>
 
             {/* Nav */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '1rem', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '0.65rem', flexShrink: 0 }}>
                 <button onClick={goPrev} disabled={current === 0} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', padding: '0.6rem 1.25rem', borderRadius: 10, background: current === 0 ? 'hsl(228,12%,11%)' : 'hsl(228,12%,14%)', border: '1px solid hsl(228,12%,22%)', color: current === 0 ? 'hsl(228,8%,30%)' : 'hsl(228,8%,70%)', cursor: current === 0 ? 'not-allowed' : 'pointer', fontSize: '0.85rem', fontWeight: 500, fontFamily: 'inherit', transition: 'all 0.2s' }}>
                     <ChevronLeft size={16} /> Previous
                 </button>
