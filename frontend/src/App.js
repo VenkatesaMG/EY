@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { UserPlus, LayoutDashboard, Sparkles, Map } from 'lucide-react';
+import { UserPlus, LayoutDashboard, Sparkles, Map, Presentation } from 'lucide-react';
 import './App.css';
 import OnboardingForm from './OnboardingForm';
 import Dashboard from './Dashboard';
 import ProviderDetail from './ProviderDetail';
 import AnalysisPage from './AnalysisPage';
 import VerificationPage from './VerificationPage';
+import PresentationPage from './PresentationPage';
 
 const pageVariants = {
   initial: { opacity: 0, y: 20 },
@@ -98,10 +99,19 @@ function App() {
               Analysis
             </span>
           </button>
+          <button
+            className={view === 'presentation' ? 'active' : ''}
+            onClick={() => handleNavClick('presentation')}
+          >
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Presentation size={16} />
+              Pitch Deck
+            </span>
+          </button>
         </nav>
       </header>
 
-      <main className={`App-content ${view === 'analysis' ? 'wide-view' : ''}`}>
+      <main className={`App-content ${view === 'analysis' || view === 'presentation' ? 'wide-view' : ''}`}>
         <AnimatePresence mode="wait">
           {view === 'onboard' && (
             <motion.div
@@ -158,6 +168,19 @@ function App() {
               transition={pageTransition}
             >
               <AnalysisPage />
+            </motion.div>
+          )}
+
+          {view === 'presentation' && (
+            <motion.div
+              key="presentation"
+              initial="initial"
+              animate="in"
+              exit="out"
+              variants={pageVariants}
+              transition={pageTransition}
+            >
+              <PresentationPage />
             </motion.div>
           )}
         </AnimatePresence>
