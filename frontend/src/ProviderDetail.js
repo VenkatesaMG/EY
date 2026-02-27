@@ -32,6 +32,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
     const [activeTab, setActiveTab] = useState('overview'); // 'overview' or 'history'
     const [auditLog, setAuditLog] = useState([]);
     const [auditLoading, setAuditLoading] = useState(false);
+    const [enriching, setEnriching] = useState(false);
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -574,9 +575,13 @@ const ProviderDetail = ({ providerId, onBack }) => {
                         <button
                             onClick={async () => {
                                 try {
-                                    const res = await fetch(`http://localhost:8000/providers/${provider.npi}/enrich`, { method: 'POST' });
+                                    const res = await fetch(`http://localhost:8000/providers/${provider.npi}/call`, { method: 'POST' });
                                     const data = await res.json();
-                                    alert(data.message);
+                                    if (data.success) {
+                                        alert(data.message);
+                                    } else {
+                                        alert("Failed to initiate call.");
+                                    }
                                 } catch (err) {
                                     alert("Error: " + err.message);
                                 }
@@ -589,11 +594,56 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '0.25rem',
-                                background: 'hsl(217, 91%, 60%)'
+                                background: 'hsl(160, 84%, 39%)', /* Green for call */
                             }}
                         >
-                            <Globe size={12} />
-                            Enrich Now
+                            <Phone size={12} color="white" />
+                            Verify via Phone
+                        </button>
+                        <button
+                            onClick={async () => {
+                                if (enriching) return;
+                                setEnriching(true);
+                                try {
+                                    await fetch(`http://localhost:8000/providers/${provider.npi}/enrich`, { method: 'POST' });
+                                    // Poll until status changes to enriched
+                                    const poll = async () => {
+                                        for (let i = 0; i < 60; i++) {
+                                            await new Promise(r => setTimeout(r, 2000));
+                                            try {
+                                                const res = await fetch(`http://localhost:8000/providers/${provider.npi}`);
+                                                const data = await res.json();
+                                                if (data.status === 'enriched' || data.status === 'verified') {
+                                                    setProvider(data);
+                                                    setEnriching(false);
+                                                    return;
+                                                }
+                                            } catch (e) { /* continue polling */ }
+                                        }
+                                        setEnriching(false);
+                                    };
+                                    poll();
+                                } catch (err) {
+                                    alert("Error: " + err.message);
+                                    setEnriching(false);
+                                }
+                            }}
+                            disabled={enriching}
+                            className="action-button primary"
+                            style={{
+                                padding: '0.25rem 0.75rem',
+                                fontSize: '0.75rem',
+                                marginLeft: '0.5rem',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                background: enriching ? 'hsl(217, 60%, 40%)' : 'hsl(217, 91%, 60%)',
+                                cursor: enriching ? 'not-allowed' : 'pointer',
+                                opacity: enriching ? 0.8 : 1
+                            }}
+                        >
+                            {enriching ? <Loader2 size={12} className="spin" /> : <Globe size={12} />}
+                            {enriching ? 'Enriching...' : 'Enrich Now'}
                         </button>
                     </div>
                 </div>

@@ -406,25 +406,29 @@ async def seed_mock_data(db: AsyncSession = Depends(get_db)):
     """
     try:
         mock_providers = [
-            {"npi": "1891106191", "first_name": "SATYASREE", "last_name": "UPADHYAYULA", "display_name": "SATYASREE UPADHYAYULA", "address_line1": "1402 S GRAND BLVD, FDT 14TH FLOOR", "city": "SAINT LOUIS", "state": "MO", "postal_code": "63104", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 85.0, "status": "verified", "npi_status": "VALID", "email": "satyasree.upadhyayula@example.com"},
-            {"npi": "1346202256", "first_name": "WENDY", "last_name": "JONES", "display_name": "WENDY P JONES", "address_line1": "2950 VILLAGE DR", "city": "FAYETTEVILLE", "state": "NC", "postal_code": "28304", "country": "US", "specialties": ["Obstetrics & Gynecology"], "overall_confidence": 88.0, "status": "verified", "npi_status": "VALID", "email": "wendy.jones@example.com"},
-            {"npi": "1306820956", "first_name": "RICHARD", "last_name": "DUROCHER", "display_name": "RICHARD W DUROCHER", "address_line1": "20 WASHINGTON AVE, STE 212", "city": "NORTH HAVEN", "state": "CT", "postal_code": "06473", "country": "US", "specialties": ["Podiatry"], "overall_confidence": 82.0, "status": "verified", "npi_status": "VALID", "email": "richard.durocher@example.com"},
-            {"npi": "1770523540", "first_name": "JASPER", "last_name": "FULLARD", "display_name": "JASPER FULLARD", "address_line1": "5746 N BROADWAY ST", "city": "KANSAS CITY", "state": "MO", "postal_code": "64118", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 87.0, "status": "verified", "npi_status": "VALID", "email": "jasper.fullard@example.com"},
-            {"npi": "1073627758", "first_name": "ANTHONY", "last_name": "PERROTTI", "display_name": "ANTHONY E PERROTTI", "address_line1": "875 MILITARY TRL, SUITE 200", "city": "JUPITER", "state": "FL", "postal_code": "33458", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 90.0, "status": "verified", "npi_status": "VALID", "email": "anthony.perrotti@example.com"},
-            {"npi": "1346571551", "first_name": "JOHN", "last_name": "PUGH", "display_name": "JOHN R PUGH", "address_line1": "504 ALBEMARLE SQ", "city": "CHARLOTTESVILLE", "state": "VA", "postal_code": "22901", "country": "US", "specialties": ["Physical Therapist in Private Practice"], "overall_confidence": 83.0, "status": "verified", "npi_status": "VALID", "email": "john.pugh@example.com"},
-            {"npi": "1215943535", "first_name": "TOM", "last_name": "BRUMITT", "display_name": "TOM B BRUMITT", "address_line1": "70 DOCTORS PARK", "city": "CAPE GIRARDEAU", "state": "MO", "postal_code": "63703", "country": "US", "specialties": ["Diagnostic Radiology"], "overall_confidence": 86.0, "status": "verified", "npi_status": "VALID", "email": "tom.brumitt@example.com"},
-            {"npi": "1629160551", "first_name": "RONALD", "last_name": "GALBREATH", "display_name": "RONALD G GALBREATH", "address_line1": "12522 E. LAMBERT ROAD, SUITE D", "city": "WHITTIER", "state": "CA", "postal_code": "90606", "country": "US", "specialties": ["Family Practice"], "overall_confidence": 89.0, "status": "verified", "npi_status": "VALID", "email": "ronald.galbreath@example.com"},
-            {"npi": "1518929124", "first_name": "RALPH", "last_name": "BOONE", "display_name": "RALPH M BOONE", "address_line1": "1215 DUNN AVE", "city": "JACKSONVILLE", "state": "FL", "postal_code": "32218", "country": "US", "specialties": ["Family Practice"], "overall_confidence": 84.0, "status": "verified", "npi_status": "VALID", "email": "ralph.boone@example.com"},
-            {"npi": "1396781134", "practice_name": "METWEST INC", "display_name": "METWEST INC", "address_line1": "695 S BROADWAY", "city": "DENVER", "state": "CO", "postal_code": "80209", "country": "US", "specialties": ["Clinical Laboratory"], "overall_confidence": 75.0, "status": "needs_review", "npi_status": "VALID", "email": "contact@metwestinc.com"},
-            {"npi": "1205869104", "first_name": "LAUREN", "last_name": "ROSEN", "display_name": "LAUREN S ROSEN", "address_line1": "306 E LANCASTER AVE STE 300", "city": "WYNNEWOOD", "state": "PA", "postal_code": "19096", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 88.0, "status": "verified", "npi_status": "VALID", "email": "lauren.rosen@example.com"},
-            {"npi": "1720086507", "first_name": "ERIC", "last_name": "RODRIGUEZ", "display_name": "ERIC J RODRIGUEZ", "address_line1": "2323 W ROSE GARDEN LN", "city": "PHOENIX", "state": "AZ", "postal_code": "85027", "country": "US", "specialties": ["Diagnostic Radiology"], "overall_confidence": 87.0, "status": "verified", "npi_status": "VALID", "email": "eric.rodriguez@example.com"},
-            {"npi": "1871511741", "first_name": "MUKESH", "last_name": "MADUPUR", "display_name": "MUKESH K MADUPUR", "address_line1": "2201 LEXINGTON AVE", "city": "ASHLAND", "state": "KY", "postal_code": "41101", "country": "US", "specialties": ["Diagnostic Radiology"], "overall_confidence": 85.0, "status": "verified", "npi_status": "VALID", "email": "mukesh.madupur@example.com"},
-            {"npi": "1942246814", "first_name": "BABAK", "last_name": "SARANI", "display_name": "BABAK SARANI", "address_line1": "2150 PENNSYLVANIA AVE NW, STE 6B", "city": "WASHINGTON", "state": "DC", "postal_code": "20037", "country": "US", "specialties": ["General Surgery"], "overall_confidence": 91.0, "status": "verified", "npi_status": "VALID", "email": "babak.sarani@example.com"},
-            {"npi": "1184886806", "first_name": "GAURAV", "last_name": "BHATIA", "display_name": "GAURAV BHATIA", "address_line1": "1860 TOWN CENTER DR, SUITE 300", "city": "RESTON", "state": "VA", "postal_code": "20190", "country": "US", "specialties": ["Pain Management"], "overall_confidence": 86.0, "status": "verified", "npi_status": "VALID", "email": "gaurav.bhatia@example.com"},
-            {"npi": "1679737241", "first_name": "AMY", "last_name": "HENKEL", "display_name": "AMY E HENKEL", "address_line1": "801 S STEVENS ST", "city": "SPOKANE", "state": "WA", "postal_code": "99204", "country": "US", "specialties": ["Diagnostic Radiology"], "overall_confidence": 88.0, "status": "verified", "npi_status": "VALID", "email": "amy.henkel@example.com"},
-            {"npi": "1366846719", "first_name": "MARIA", "last_name": "ORREGO", "display_name": "MARIA X ORREGO", "address_line1": "1801 INWOOD RD FL 7, SUITE 120", "city": "DALLAS", "state": "TX", "postal_code": "75390", "country": "US", "specialties": ["Physician Assistant"], "overall_confidence": 82.0, "status": "verified", "npi_status": "VALID", "email": "maria.orrego@example.com"},
-            {"npi": "1710088190", "first_name": "AARON", "last_name": "CAMPBELL", "display_name": "AARON W CAMPBELL", "address_line1": "605 MEDICAL COURTS, SUITE 203", "city": "BRENHAM", "state": "TX", "postal_code": "77833", "country": "US", "specialties": ["Obstetrics & Gynecology"], "overall_confidence": 87.0, "status": "verified", "npi_status": "VALID", "email": "aaron.campbell@example.com"},
-            {"npi": "1801136759", "first_name": "GREGORY", "last_name": "BERNARDO", "display_name": "GREGORY BERNARDO", "address_line1": "1925 PACIFIC AVE", "city": "ATLANTIC CITY", "state": "NJ", "postal_code": "08401", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 85.0, "status": "verified", "npi_status": "VALID", "email": "gregory.bernardo@example.com"},
+            # Custom record for testing Twilio
+            {"npi": "9999999999", "first_name": "DHILEEPAN", "last_name": "S B", "display_name": "Dr. DHILEEPAN", "address_line1": "123 Tech Avenue", "city": "CHENNAI", "state": "TN", "postal_code": "600001", "country": "IN", "specialties": ["Software Engineering"], "overall_confidence": 99.0, "status": "needs_review", "npi_status": "VALID", "email": "dhileepan@example.com", "phone": "6369764886"},
+            
+        #     {"npi": "1891106191", "first_name": "SATYASREE", "last_name": "UPADHYAYULA", "display_name": "SATYASREE UPADHYAYULA", "address_line1": "1402 S GRAND BLVD, FDT 14TH FLOOR", "city": "SAINT LOUIS", "state": "MO", "postal_code": "63104", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 85.0, "status": "verified", "npi_status": "VALID", "email": "satyasree.upadhyayula@example.com", "phone": "6369764886"},
+        #     {"npi": "1346202256", "first_name": "WENDY", "last_name": "JONES", "display_name": "WENDY P JONES", "address_line1": "2950 VILLAGE DR", "city": "FAYETTEVILLE", "state": "NC", "postal_code": "28304", "country": "US", "specialties": ["Obstetrics & Gynecology"], "overall_confidence": 88.0, "status": "verified", "npi_status": "VALID", "email": "wendy.jones@example.com", "phone": "6369764886"},
+        #     {"npi": "1306820956", "first_name": "RICHARD", "last_name": "DUROCHER", "display_name": "RICHARD W DUROCHER", "address_line1": "20 WASHINGTON AVE, STE 212", "city": "NORTH HAVEN", "state": "CT", "postal_code": "06473", "country": "US", "specialties": ["Podiatry"], "overall_confidence": 82.0, "status": "verified", "npi_status": "VALID", "email": "richard.durocher@example.com", "phone": "6369764886"},
+        #     {"npi": "1770523540", "first_name": "JASPER", "last_name": "FULLARD", "display_name": "JASPER FULLARD", "address_line1": "5746 N BROADWAY ST", "city": "KANSAS CITY", "state": "MO", "postal_code": "64118", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 87.0, "status": "verified", "npi_status": "VALID", "email": "jasper.fullard@example.com", "phone": "6369764886"},
+        #     {"npi": "1073627758", "first_name": "ANTHONY", "last_name": "PERROTTI", "display_name": "ANTHONY E PERROTTI", "address_line1": "875 MILITARY TRL, SUITE 200", "city": "JUPITER", "state": "FL", "postal_code": "33458", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 90.0, "status": "verified", "npi_status": "VALID", "email": "anthony.perrotti@example.com", "phone": "6369764886"},
+        #     {"npi": "1346571551", "first_name": "JOHN", "last_name": "PUGH", "display_name": "JOHN R PUGH", "address_line1": "504 ALBEMARLE SQ", "city": "CHARLOTTESVILLE", "state": "VA", "postal_code": "22901", "country": "US", "specialties": ["Physical Therapist in Private Practice"], "overall_confidence": 83.0, "status": "verified", "npi_status": "VALID", "email": "john.pugh@example.com", "phone": "6369764886"},
+        #     {"npi": "1215943535", "first_name": "TOM", "last_name": "BRUMITT", "display_name": "TOM B BRUMITT", "address_line1": "70 DOCTORS PARK", "city": "CAPE GIRARDEAU", "state": "MO", "postal_code": "63703", "country": "US", "specialties": ["Diagnostic Radiology"], "overall_confidence": 86.0, "status": "verified", "npi_status": "VALID", "email": "tom.brumitt@example.com", "phone": "6369764886"},
+        #     {"npi": "1629160551", "first_name": "RONALD", "last_name": "GALBREATH", "display_name": "RONALD G GALBREATH", "address_line1": "12522 E. LAMBERT ROAD, SUITE D", "city": "WHITTIER", "state": "CA", "postal_code": "90606", "country": "US", "specialties": ["Family Practice"], "overall_confidence": 89.0, "status": "verified", "npi_status": "VALID", "email": "ronald.galbreath@example.com", "phone": "6369764886"},
+        #     {"npi": "1518929124", "first_name": "RALPH", "last_name": "BOONE", "display_name": "RALPH M BOONE", "address_line1": "1215 DUNN AVE", "city": "JACKSONVILLE", "state": "FL", "postal_code": "32218", "country": "US", "specialties": ["Family Practice"], "overall_confidence": 84.0, "status": "verified", "npi_status": "VALID", "email": "ralph.boone@example.com", "phone": "6369764886"},
+        #     {"npi": "1396781134", "practice_name": "METWEST INC", "display_name": "METWEST INC", "address_line1": "695 S BROADWAY", "city": "DENVER", "state": "CO", "postal_code": "80209", "country": "US", "specialties": ["Clinical Laboratory"], "overall_confidence": 75.0, "status": "needs_review", "npi_status": "VALID", "email": "contact@metwestinc.com", "phone": "6369764886"},
+        #     {"npi": "1205869104", "first_name": "LAUREN", "last_name": "ROSEN", "display_name": "LAUREN S ROSEN", "address_line1": "306 E LANCASTER AVE STE 300", "city": "WYNNEWOOD", "state": "PA", "postal_code": "19096", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 88.0, "status": "verified", "npi_status": "VALID", "email": "lauren.rosen@example.com"},
+        #     {"npi": "1720086507", "first_name": "ERIC", "last_name": "RODRIGUEZ", "display_name": "ERIC J RODRIGUEZ", "address_line1": "2323 W ROSE GARDEN LN", "city": "PHOENIX", "state": "AZ", "postal_code": "85027", "country": "US", "specialties": ["Diagnostic Radiology"], "overall_confidence": 87.0, "status": "verified", "npi_status": "VALID", "email": "eric.rodriguez@example.com"},
+        #     {"npi": "1871511741", "first_name": "MUKESH", "last_name": "MADUPUR", "display_name": "MUKESH K MADUPUR", "address_line1": "2201 LEXINGTON AVE", "city": "ASHLAND", "state": "KY", "postal_code": "41101", "country": "US", "specialties": ["Diagnostic Radiology"], "overall_confidence": 85.0, "status": "verified", "npi_status": "VALID", "email": "mukesh.madupur@example.com"},
+        #     {"npi": "1942246814", "first_name": "BABAK", "last_name": "SARANI", "display_name": "BABAK SARANI", "address_line1": "2150 PENNSYLVANIA AVE NW, STE 6B", "city": "WASHINGTON", "state": "DC", "postal_code": "20037", "country": "US", "specialties": ["General Surgery"], "overall_confidence": 91.0, "status": "verified", "npi_status": "VALID", "email": "babak.sarani@example.com"},
+        #     {"npi": "1184886806", "first_name": "GAURAV", "last_name": "BHATIA", "display_name": "GAURAV BHATIA", "address_line1": "1860 TOWN CENTER DR, SUITE 300", "city": "RESTON", "state": "VA", "postal_code": "20190", "country": "US", "specialties": ["Pain Management"], "overall_confidence": 86.0, "status": "verified", "npi_status": "VALID", "email": "gaurav.bhatia@example.com"},
+        #     {"npi": "1679737241", "first_name": "AMY", "last_name": "HENKEL", "display_name": "AMY E HENKEL", "address_line1": "801 S STEVENS ST", "city": "SPOKANE", "state": "WA", "postal_code": "99204", "country": "US", "specialties": ["Diagnostic Radiology"], "overall_confidence": 88.0, "status": "verified", "npi_status": "VALID", "email": "amy.henkel@example.com"},
+        #     {"npi": "1366846719", "first_name": "MARIA", "last_name": "ORREGO", "display_name": "MARIA X ORREGO", "address_line1": "1801 INWOOD RD FL 7, SUITE 120", "city": "DALLAS", "state": "TX", "postal_code": "75390", "country": "US", "specialties": ["Physician Assistant"], "overall_confidence": 82.0, "status": "verified", "npi_status": "VALID", "email": "maria.orrego@example.com"},
+        #     {"npi": "1710088190", "first_name": "AARON", "last_name": "CAMPBELL", "display_name": "AARON W CAMPBELL", "address_line1": "605 MEDICAL COURTS, SUITE 203", "city": "BRENHAM", "state": "TX", "postal_code": "77833", "country": "US", "specialties": ["Obstetrics & Gynecology"], "overall_confidence": 87.0, "status": "verified", "npi_status": "VALID", "email": "aaron.campbell@example.com"},
+        #     {"npi": "1801136759", "first_name": "GREGORY", "last_name": "BERNARDO", "display_name": "GREGORY BERNARDO", "address_line1": "1925 PACIFIC AVE", "city": "ATLANTIC CITY", "state": "NJ", "postal_code": "08401", "country": "US", "specialties": ["Internal Medicine"], "overall_confidence": 85.0, "status": "verified", "npi_status": "VALID", "email": "gregory.bernardo@example.com"},
+        # 
         ]
         
         created_count = 0
@@ -486,6 +490,11 @@ async def seed_mock_data(db: AsyncSession = Depends(get_db)):
 
 from datetime import datetime, timedelta
 from Agents.email_agent import EmailVerificationAgent
+from Agents.call_agent import CallVerificationAgent
+
+# Import Response & Form for Twilio
+from fastapi import Request, Form
+from fastapi.responses import Response
 
 @app.post("/providers/{provider_id}/verify-email")
 async def verify_provider_email(provider_id: str, db: AsyncSession = Depends(get_db)):
@@ -685,6 +694,102 @@ async def submit_verification_data(token: str, data: dict = Body(...), db: Async
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/providers/{provider_id}/call")
+async def initiate_provider_call(provider_id: str, request: Request, db: AsyncSession = Depends(get_db)):
+    """
+    Initiates a verification phone call for a provider using Twilio.
+    """
+    try:
+        result = await db.execute(select(ProviderPersonal).options(selectinload(ProviderPersonal.meta)).filter(ProviderPersonal.npi == provider_id))
+        provider = result.scalars().first()
+        
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider not found")
+        if not provider.phone:
+            raise HTTPException(status_code=400, detail="Provider has no phone number on record")
+            
+            
+        # Prioritize WEBHOOK_BASE_URL from env
+        import os
+        webhook_base = os.getenv("WEBHOOK_BASE_URL")
+        
+        if not webhook_base:
+            host = request.headers.get("host", "localhost:8000")
+            scheme = request.headers.get("x-forwarded-proto", "http")
+            webhook_base = f"{scheme}://{host}"
+            
+        call_agent = CallVerificationAgent(webhook_base_url=webhook_base)
+        
+        success = call_agent.initiate_verification_call(
+            provider_id=provider.npi,
+            to_number=provider.phone,
+            provider_name=provider.display_name or provider.last_name or "Doctor"
+        )
+        
+        if success:
+            return {"success": True, "message": f"Calling {provider.phone} now..."}
+        else:
+            raise HTTPException(status_code=500, detail="Failed to initiate call")
+
+    except Exception as e:
+        logger.error(f"Error starting call: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Call failed: {str(e)}")
+
+@app.post("/twilio/call/{provider_id}/step/{step}")
+async def twilio_call_webhook(
+    provider_id: str, 
+    step: str,
+    request: Request,
+    SpeechResult: Optional[str] = Form(None),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Webhook for Twilio TwiML responses during the call.
+    Each step returns XML (TwiML) text that Twilio parses out.
+    """
+    logger.info(f"Twilio Webhook: Provider {provider_id} | Step {step} | SpeechResult: {SpeechResult}")
+    
+    # Needs to return valid application/xml response
+    result = await db.execute(select(ProviderPersonal).options(
+        selectinload(ProviderPersonal.professional),
+        selectinload(ProviderPersonal.meta)
+    ).filter(ProviderPersonal.npi == provider_id))
+    provider = result.scalars().first()
+    
+    if not provider:
+         return Response(content="<Response><Say>Invalid Provider ID. Goodbye.</Say><Hangup/></Response>", media_type="application/xml")
+         
+    # Generate provider data dict to pass
+    provider_data = {
+        "last_name": provider.last_name,
+        "practice_name": provider.professional.practice_name if provider.professional else None,
+        "address_line1": provider.address_line1,
+        "city": provider.city,
+    }
+    
+    call_agent = CallVerificationAgent()
+    xml_response = call_agent.generate_twiml_for_step(provider_id, step, provider_data, SpeechResult)
+    
+    # If final step, we update status to verified_by_provider
+    if step == "verify_address" and SpeechResult is not None:
+        try:
+             if not provider.meta:
+                 provider.meta = ProviderMeta(npi=provider.npi)
+             
+             old_status = provider.meta.status
+             provider.meta.status = "verified_by_provider"
+             provider.meta.overall_confidence = 100.0
+             
+             log_field_change(db, provider.npi, 'status', old_status, 'verified_by_provider', 'phone_verification', 'meta', 'provider')
+             await db.commit()
+             logger.info(f"Verified {provider.npi} purely via phone interaction!")
+        except Exception as e:
+             logger.error(f"Error verifying provider via phone call: {e}")
+
+    return Response(content=xml_response, media_type="application/xml")
 
 
 
