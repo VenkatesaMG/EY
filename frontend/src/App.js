@@ -111,7 +111,7 @@ function App() {
         </nav>
       </header>
 
-      <main className={`App-content ${view === 'analysis' || view === 'presentation' ? 'wide-view' : ''}`}>
+      <main className={`App-content ${view === 'analysis' || view === 'presentation' || view === 'dashboard' ? 'wide-view' : ''}`}>
         <AnimatePresence mode="wait">
           {view === 'onboard' && (
             <motion.div

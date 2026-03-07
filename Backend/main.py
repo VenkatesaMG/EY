@@ -21,7 +21,7 @@ from sqlalchemy import func, desc, delete
 
 from database import get_db, init_db
 from models import ProviderPersonal, ProviderProfessional, ProviderMeta, RawProviderSubmission, MarketExpansionOpportunity, ProviderAuditLog
-from services import ValidationService, SubmissionPipeline, EnrichmentService, log_field_change
+from services import ValidationService, SubmissionPipeline, EnrichmentService, log_field_change, is_significant_change
 from Agents.extractor_agent import HealthcareExtractionModel
 
 # Configure clean, readable logging
@@ -53,6 +53,73 @@ app.add_middleware(
 @app.on_event("startup")
 async def on_startup():
     await init_db()
+    
+    # Start the scheduler loop
+    global _scheduler_task
+    import sys
+    if "pytest" not in sys.modules:
+        _scheduler_task = asyncio.create_task(bg_scheduler_loop())
+
+# --- Scheduler Setup ---
+import asyncio
+from datetime import datetime, timedelta
+from pydantic import BaseModel
+from database import AsyncSessionLocal
+
+SCHEDULER_INTERVAL_MINUTES = 0  # 0 means disabled
+_scheduler_task = None
+_last_run = None
+
+async def bg_scheduler_loop():
+    global _last_run, SCHEDULER_INTERVAL_MINUTES
+    
+    while True:
+        if SCHEDULER_INTERVAL_MINUTES > 0:
+            now = datetime.utcnow()
+            # If never run, or interval has passed
+            if _last_run is None or (now - _last_run).total_seconds() >= (SCHEDULER_INTERVAL_MINUTES * 60):
+                logger.info("⏰ Running scheduled batch enrichment...")
+                try:
+                    async with AsyncSessionLocal() as db:
+                        stmt = select(ProviderMeta).filter(ProviderMeta.status == 'needs_review')
+                        res = await db.execute(stmt)
+                        metas = res.scalars().all()
+                        npi_list = [m.npi for m in metas]
+                    
+                    if npi_list:
+                        logger.info(f"Scheduled enrichment: Found {len(npi_list)} providers needing review.")
+                        from services import EnrichmentService
+                        for npi in npi_list:
+                            try:
+                                logger.info(f"Scheduled Enrichment for {npi}")
+                                await EnrichmentService.enrich_provider(npi=npi)
+                            except Exception as inner_e:
+                                logger.error(f"Error scheduled enriching {npi}: {inner_e}")
+                                
+                except Exception as e:
+                    logger.error(f"Scheduled task error: {e}")
+                finally:
+                    _last_run = datetime.utcnow() # Update last run time regardless of success
+        
+        await asyncio.sleep(30) # check every 30 seconds
+
+class ScheduleConfig(BaseModel):
+    interval_minutes: float
+
+@app.get("/scheduler/config")
+async def get_scheduler_config():
+    global SCHEDULER_INTERVAL_MINUTES, _last_run
+    return {
+        "interval_minutes": SCHEDULER_INTERVAL_MINUTES,
+        "last_run": _last_run.isoformat() if _last_run else None,
+        "next_run": (_last_run + timedelta(minutes=SCHEDULER_INTERVAL_MINUTES)).isoformat() if _last_run and SCHEDULER_INTERVAL_MINUTES > 0 else None
+    }
+
+@app.post("/scheduler/config")
+async def update_scheduler_config(config: ScheduleConfig):
+    global SCHEDULER_INTERVAL_MINUTES
+    SCHEDULER_INTERVAL_MINUTES = config.interval_minutes
+    return {"message": f"Interval updated to {SCHEDULER_INTERVAL_MINUTES} minutes", "interval_minutes": SCHEDULER_INTERVAL_MINUTES}
 
 # --- Endpoints ---
 
@@ -645,8 +712,9 @@ async def submit_verification_data(token: str, data: dict = Body(...), db: Async
             if field_key in data:
                 old_val = getattr(p, attr_name, None)
                 new_val = data[field_key]
-                log_field_change(db, p.npi, attr_name, old_val, new_val, 'verification', 'personal', 'provider')
-                setattr(p, attr_name, new_val)
+                if is_significant_change(attr_name, old_val, new_val):
+                    log_field_change(db, p.npi, attr_name, old_val, new_val, 'verification', 'personal', 'provider')
+                    setattr(p, attr_name, new_val)
         
         # Professional fields
         verification_fields_prof = {
@@ -657,17 +725,19 @@ async def submit_verification_data(token: str, data: dict = Body(...), db: Async
             if field_key in data:
                 old_val = getattr(prof, attr_name, None)
                 new_val = data[field_key]
-                log_field_change(db, p.npi, attr_name, old_val, new_val, 'verification', 'professional', 'provider')
-                setattr(prof, attr_name, new_val)
+                if is_significant_change(attr_name, old_val, new_val):
+                    log_field_change(db, p.npi, attr_name, old_val, new_val, 'verification', 'professional', 'provider')
+                    setattr(prof, attr_name, new_val)
         
         # Address (Sync both for simplicity in this flow)
         for addr_field in ['address_line1', 'city', 'state', 'postal_code']:
             if addr_field in data:
                 old_val = getattr(p, addr_field, None)
                 new_val = data[addr_field]
-                log_field_change(db, p.npi, addr_field, old_val, new_val, 'verification', 'personal', 'provider')
-                setattr(p, addr_field, new_val)
-                setattr(prof, addr_field, new_val)
+                if is_significant_change(addr_field, old_val, new_val):
+                    log_field_change(db, p.npi, addr_field, old_val, new_val, 'verification', 'personal', 'provider')
+                    setattr(p, addr_field, new_val)
+                    setattr(prof, addr_field, new_val)
             
         # Update Meta Status
         log_field_change(db, p.npi, 'status', meta.status, 'verified_by_provider', 'verification', 'meta', 'provider')
@@ -738,19 +808,52 @@ async def initiate_provider_call(provider_id: str, request: Request, db: AsyncSe
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Call failed: {str(e)}")
 
+from fastapi.responses import StreamingResponse
+import asyncio
+
+# Global dictionary to hold SSE queues for real-time call updates
+provider_call_events = {}
+
+@app.get("/providers/{provider_id}/call-stream")
+async def call_stream(provider_id: str):
+    async def event_generator():
+        if provider_id not in provider_call_events:
+            provider_call_events[provider_id] = asyncio.Queue()
+        queue = provider_call_events[provider_id]
+        
+        try:
+            while True:
+                message = await queue.get()
+                yield f"data: {json.dumps(message)}\n\n"
+        except asyncio.CancelledError:
+            pass
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+
 @app.post("/twilio/call/{provider_id}/step/{step}")
 async def twilio_call_webhook(
     provider_id: str, 
     step: str,
     request: Request,
     SpeechResult: Optional[str] = Form(None),
+    Digits: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db)
 ):
     """
     Webhook for Twilio TwiML responses during the call.
     Each step returns XML (TwiML) text that Twilio parses out.
     """
-    logger.info(f"Twilio Webhook: Provider {provider_id} | Step {step} | SpeechResult: {SpeechResult}")
+    logger.info(f"Twilio Webhook: Provider {provider_id} | Step {step} | SpeechResult: {SpeechResult} | Digits: {Digits}")
+    
+    # Broadcast to SSE
+    if provider_id in provider_call_events:
+        await provider_call_events[provider_id].put({
+            "step": step,
+            "speech": SpeechResult,
+            "digits": Digits,
+            "timestamp": datetime.utcnow().isoformat()
+        })
     
     # Needs to return valid application/xml response
     result = await db.execute(select(ProviderPersonal).options(
@@ -771,23 +874,51 @@ async def twilio_call_webhook(
     }
     
     call_agent = CallVerificationAgent()
-    xml_response = call_agent.generate_twiml_for_step(provider_id, step, provider_data, SpeechResult)
+    xml_response, extracted_updates = call_agent.generate_twiml_for_step(provider_id, step, provider_data, SpeechResult, Digits)
     
     # If final step, we update status to verified_by_provider
-    if step == "verify_address" and SpeechResult is not None:
+    if step == "process_update" and extracted_updates:
         try:
-             if not provider.meta:
-                 provider.meta = ProviderMeta(npi=provider.npi)
+            if not provider.meta:
+                provider.meta = ProviderMeta(npi=provider.npi)
              
-             old_status = provider.meta.status
-             provider.meta.status = "verified_by_provider"
-             provider.meta.overall_confidence = 100.0
+            for field, val in extracted_updates.items():
+                if not val: continue
+                # simple mapping (in a real scenario, use more robust mapping/validation)
+                if field in ["address_line1", "city", "state", "postal_code", "phone", "email"]:
+                    old_val = getattr(provider, field, None)
+                    if is_significant_change(field, old_val, val):
+                        setattr(provider, field, val)
+                        log_field_change(db, provider.npi, field, old_val, val, 'phone_verification', 'personal', 'provider')
+                        if provider.professional and field in ["address_line1", "city", "state", "postal_code"]:
+                            setattr(provider.professional, field, val)
+                        
+                elif field in ["practice_name", "website", "accepting_new_patients", "telehealth"]:
+                     if provider.professional:
+                         old_val = getattr(provider.professional, field, None)
+                         if is_significant_change(field, old_val, val):
+                             setattr(provider.professional, field, val)
+                             log_field_change(db, provider.npi, field, old_val, val, 'phone_verification', 'professional', 'provider')
              
-             log_field_change(db, provider.npi, 'status', old_status, 'verified_by_provider', 'phone_verification', 'meta', 'provider')
-             await db.commit()
-             logger.info(f"Verified {provider.npi} purely via phone interaction!")
+            old_status = provider.meta.status
+            provider.meta.status = "verified_by_provider"
+            provider.meta.overall_confidence = 100.0
+             
+            log_field_change(db, provider.npi, 'status', old_status, 'verified_by_provider', 'phone_verification', 'meta', 'provider')
+            await db.commit()
+            
+            # Broadcast update success
+            if provider_id in provider_call_events:
+                await provider_call_events[provider_id].put({
+                    "step": "completed",
+                    "updates": extracted_updates,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+             
+            logger.info(f"Verified & updated {provider.npi} purely via phone interaction! Updates: {extracted_updates}")
         except Exception as e:
-             logger.error(f"Error verifying provider via phone call: {e}")
+            await db.rollback()
+            logger.error(f"Error verifying provider via phone call: {e}")
 
     return Response(content=xml_response, media_type="application/xml")
 
@@ -1167,3 +1298,196 @@ IMPORTANT GUIDELINES:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Chat failed: {str(e)}")
+
+
+@app.get("/providers/{provider_id}/manual-review")
+async def get_manual_review_data(provider_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Get all candidate values for each attribute grouped by source,
+    pulled from the audit log exactly to help manual review.
+    """
+    try:
+        stmt = select(ProviderAuditLog).filter(ProviderAuditLog.npi == provider_id).order_by(ProviderAuditLog.changed_at)
+        res = await db.execute(stmt)
+        entries = res.scalars().all()
+        
+        fields_data = {}
+        for entry in entries:
+            fname = entry.field_name
+            if fname not in fields_data:
+                fields_data[fname] = {}
+            if entry.new_value is not None:
+                # Store the latest non-null value from this source
+                fields_data[fname][entry.change_source] = entry.new_value
+        
+        return fields_data
+    except Exception as e:
+        logger.error(f"Error fetching manual review data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/providers/{provider_id}/manual-review")
+async def submit_manual_review(provider_id: str, payload: dict = Body(...), db: AsyncSession = Depends(get_db)):
+    """
+    Submit manual review updates. Will convert provider to a golden record.
+    payload: {"updates": {"first_name": "John", "last_name": "Doe", ...}}
+    """
+    try:
+        updates = payload.get("updates", {})
+        if not updates:
+            return {"success": True, "message": "No updates provided"}
+            
+        result = await db.execute(select(ProviderPersonal).options(
+            selectinload(ProviderPersonal.professional),
+            selectinload(ProviderPersonal.meta)
+        ).filter(ProviderPersonal.npi == provider_id))
+        provider = result.scalars().first()
+        
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider not found")
+            
+        for field, val in updates.items():
+            # If val is string 'None' or empty, maybe None, but let's just keep as is
+            # Update Personal
+            if hasattr(provider, field) and field not in ['npi', 'id', 'field_metadata']:
+                old_val = getattr(provider, field, None)
+                if is_significant_change(field, old_val, val):
+                    setattr(provider, field, val)
+                    log_field_change(db, provider.npi, field, old_val, val, 'manual_admin', 'personal', 'admin')
+            
+            # Update Professional
+            if provider.professional and hasattr(provider.professional, field) and field not in ['npi', 'id', 'field_metadata']:
+                old_val = getattr(provider.professional, field, None)
+                # Parse specialties list string if it is a string
+                if field == "specialties" and isinstance(val, str):
+                    if val.startswith("[") and val.endswith("]"):
+                        import ast
+                        try:
+                            val = ast.literal_eval(val)
+                        except:
+                            val = [s.strip() for s in val.replace("[","").replace("]","").split(",") if s.strip()]
+                    else:
+                        val = [s.strip() for s in val.split(",") if s.strip()]
+                        
+                if is_significant_change(field, old_val, val):
+                    setattr(provider.professional, field, val)
+                    log_field_change(db, provider.npi, field, old_val, val, 'manual_admin', 'professional', 'admin')
+                    
+        # Mark as golden record / verified
+        if provider.meta:
+            old_status = provider.meta.status
+            provider.meta.status = "verified_manual"
+            provider.meta.overall_confidence = 100.0
+            log_field_change(db, provider.npi, 'status', old_status, 'verified_manual', 'manual_admin', 'meta', 'admin')
+            
+            flags = provider.meta.data_quality_flags or []
+            flags = [f for f in flags if "mismatch" not in f]
+            if "manual_golden_record" not in flags:
+                flags.append("manual_golden_record")
+            provider.meta.data_quality_flags = flags
+            provider.meta.manual_review_required = False
+            
+        await db.commit()
+        return {"success": True, "message": "Provider successfully updated as Golden Record."}
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error submitting manual review: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/providers/{provider_id}/manual-review")
+async def get_manual_review_data(provider_id: str, db: AsyncSession = Depends(get_db)):
+    """
+    Get all candidate values for each attribute grouped by source,
+    pulled from the audit log exactly to help manual review.
+    """
+    try:
+        stmt = select(ProviderAuditLog).filter(ProviderAuditLog.npi == provider_id).order_by(ProviderAuditLog.changed_at)
+        res = await db.execute(stmt)
+        entries = res.scalars().all()
+        
+        fields_data = {}
+        for entry in entries:
+            fname = entry.field_name
+            if fname not in fields_data:
+                fields_data[fname] = {}
+            if entry.new_value is not None:
+                # Store the latest non-null value from this source
+                fields_data[fname][entry.change_source] = entry.new_value
+        
+        return fields_data
+    except Exception as e:
+        logger.error(f"Error fetching manual review data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/providers/{provider_id}/manual-review")
+async def submit_manual_review(provider_id: str, payload: dict = Body(...), db: AsyncSession = Depends(get_db)):
+    """
+    Submit manual review updates. Will convert provider to a golden record.
+    payload: {"updates": {"first_name": "John", "last_name": "Doe", ...}}
+    """
+    try:
+        updates = payload.get("updates", {})
+        if not updates:
+            return {"success": True, "message": "No updates provided"}
+            
+        result = await db.execute(select(ProviderPersonal).options(
+            selectinload(ProviderPersonal.professional),
+            selectinload(ProviderPersonal.meta)
+        ).filter(ProviderPersonal.npi == provider_id))
+        provider = result.scalars().first()
+        
+        if not provider:
+            raise HTTPException(status_code=404, detail="Provider not found")
+            
+        for field, val in updates.items():
+            # If val is string 'None' or empty, maybe None, but let's just keep as is
+            # Update Personal
+            if hasattr(provider, field) and field not in ['npi', 'id', 'field_metadata']:
+                old_val = getattr(provider, field, None)
+                if is_significant_change(field, old_val, val):
+                    setattr(provider, field, val)
+                    log_field_change(db, provider.npi, field, old_val, val, 'manual_admin', 'personal', 'admin')
+            
+            # Update Professional
+            if provider.professional and hasattr(provider.professional, field) and field not in ['npi', 'id', 'field_metadata']:
+                old_val = getattr(provider.professional, field, None)
+                # Parse specialties list string if it is a string
+                if field == "specialties" and isinstance(val, str):
+                    if val.startswith("[") and val.endswith("]"):
+                        import ast
+                        try:
+                            val = ast.literal_eval(val)
+                        except:
+                            val = [s.strip() for s in val.replace("[","").replace("]","").split(",") if s.strip()]
+                    else:
+                        val = [s.strip() for s in val.split(",") if s.strip()]
+                        
+                if is_significant_change(field, old_val, val):
+                    setattr(provider.professional, field, val)
+                    log_field_change(db, provider.npi, field, old_val, val, 'manual_admin', 'professional', 'admin')
+                    
+        # Mark as golden record / verified
+        if provider.meta:
+            old_status = provider.meta.status
+            provider.meta.status = "verified_manual"
+            provider.meta.overall_confidence = 100.0
+            log_field_change(db, provider.npi, 'status', old_status, 'verified_manual', 'manual_admin', 'meta', 'admin')
+            
+            flags = provider.meta.data_quality_flags or []
+            flags = [f for f in flags if "mismatch" not in f]
+            if "manual_golden_record" not in flags:
+                flags.append("manual_golden_record")
+            provider.meta.data_quality_flags = flags
+            provider.meta.manual_review_required = False
+            
+        await db.commit()
+        return {"success": True, "message": "Provider successfully updated as Golden Record."}
+        
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Error submitting manual review: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+

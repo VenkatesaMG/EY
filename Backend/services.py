@@ -41,6 +41,56 @@ def log_field_change(db_session, npi: str, field_name: str, old_value, new_value
     db_session.add(entry)
     return entry
 
+
+import re
+
+def is_significant_change(field_name: str, old_val, new_val) -> bool:
+    if old_val == new_val:
+        return False
+        
+    old_str = str(old_val) if old_val is not None else ""
+    new_str = str(new_val) if new_val is not None else ""
+    if old_str == new_str:
+        return False
+        
+    old_norm = old_str.lower().strip()
+    new_norm = new_str.lower().strip()
+    if old_norm == new_norm:
+        return False
+        
+    f_name = field_name.lower()
+    
+    # Phone / Zip formatting
+    if f_name in ["phone", "postal_code", "telephone_number"]:
+        old_digits = re.sub(r'\D', '', old_str)
+        new_digits = re.sub(r'\D', '', new_str)
+        if old_digits and new_digits and old_digits == new_digits:
+            return False
+            
+    # Addresses (ignore punctuation)
+    if "address" in f_name or "city" in f_name:
+        old_alpha = re.sub(r'[^a-z0-9]', '', old_norm)
+        new_alpha = re.sub(r'[^a-z0-9]', '', new_norm)
+        if old_alpha and new_alpha and old_alpha == new_alpha:
+            return False
+            
+    # Specialties / Taxonomies (list parsing)
+    if f_name in ["specialties", "taxonomies"]:
+        def extract_words(s):
+            return set(re.findall(r'[a-z0-9]+', s.lower()))
+        if extract_words(old_str) == extract_words(new_str):
+            return False
+            
+    return True
+
+def update_and_log_if_significant(db_session, npi: str, obj, field_name: str, new_value, source: str, table_name: str = None, actor: str = "system"):
+    old_value = getattr(obj, field_name, None)
+    if is_significant_change(field_name, old_value, new_value):
+        log_field_change(db_session, npi, field_name, old_value, new_value, source, table_name, actor)
+        setattr(obj, field_name, new_value)
+        return True
+    return False
+
 class ValidationService:
     @staticmethod
     async def process_submission(submission_id: int):
@@ -548,51 +598,40 @@ class EnrichmentService:
                 logger.info(f"✨ Enrichment Result: {json.dumps(result, indent=2)}")
 
                 if result.get("phone"):
-                    log_field_change(db, npi, 'phone', provider.phone, result['phone'], 'enrichment', 'personal')
-                    provider.phone = result["phone"]
+                    update_and_log_if_significant(db, npi, provider, 'phone', result['phone'], 'enrichment', 'personal')
 
                 if result.get("website"):
-                    log_field_change(db, npi, 'website', provider_prof.website, result['website'], 'enrichment', 'professional')
-                    provider_prof.website = result["website"]
+                    update_and_log_if_significant(db, npi, provider_prof, 'website', result['website'], 'enrichment', 'professional')
 
                 # Fix: Agent returns 'address_line1', not 'practice_address'
                 # For address, we allow enrichment to update the PROFESSIONAL address if found
                 if result.get("address_line1"):
-                    log_field_change(db, npi, 'address_line1', provider_prof.address_line1, result['address_line1'], 'enrichment', 'professional')
-                    provider_prof.address_line1 = result["address_line1"]
+                    update_and_log_if_significant(db, npi, provider_prof, 'address_line1', result['address_line1'], 'enrichment', 'professional')
                 elif result.get("practice_address"):
-                    log_field_change(db, npi, 'address_line1', provider_prof.address_line1, result['practice_address'], 'enrichment', 'professional')
-                    provider_prof.address_line1 = result["practice_address"]
+                    update_and_log_if_significant(db, npi, provider_prof, 'address_line1', result['practice_address'], 'enrichment', 'professional')
 
                 if result.get("practice_name"):
-                    log_field_change(db, npi, 'practice_name', provider_prof.practice_name, result['practice_name'], 'enrichment', 'professional')
-                    provider_prof.practice_name = result["practice_name"]
+                    update_and_log_if_significant(db, npi, provider_prof, 'practice_name', result['practice_name'], 'enrichment', 'professional')
 
                 if result.get("accepting_new_patients") is not None:
-                    log_field_change(db, npi, 'accepting_new_patients', provider_prof.accepting_new_patients, result['accepting_new_patients'], 'enrichment', 'professional')
-                    provider_prof.accepting_new_patients = result["accepting_new_patients"]
+                    update_and_log_if_significant(db, npi, provider_prof, 'accepting_new_patients', result['accepting_new_patients'], 'enrichment', 'professional')
 
                 if result.get("telehealth") is not None:
-                    log_field_change(db, npi, 'telehealth', provider_prof.telehealth, result['telehealth'], 'enrichment', 'professional')
-                    provider_prof.telehealth = result["telehealth"]
+                    update_and_log_if_significant(db, npi, provider_prof, 'telehealth', result['telehealth'], 'enrichment', 'professional')
 
                 if result.get("city"):
-                    log_field_change(db, npi, 'city', provider_prof.city, result['city'], 'enrichment', 'professional')
-                    provider_prof.city = result["city"]
+                    update_and_log_if_significant(db, npi, provider_prof, 'city', result['city'], 'enrichment', 'professional')
                 
                 if result.get("state"):
-                    log_field_change(db, npi, 'state', provider_prof.state, result['state'], 'enrichment', 'professional')
-                    provider_prof.state = result["state"]
-                    provider.state = result["state"] # Sync parent table for analytics
+                    if update_and_log_if_significant(db, npi, provider_prof, 'state', result['state'], 'enrichment', 'professional'):
+                        provider.state = result["state"] # Sync parent table for analytics
 
                 if result.get("postal_code"):
-                    log_field_change(db, npi, 'postal_code', provider_prof.postal_code, result['postal_code'], 'enrichment', 'professional')
-                    provider_prof.postal_code = result["postal_code"]
-                    provider.postal_code = result["postal_code"]
+                    if update_and_log_if_significant(db, npi, provider_prof, 'postal_code', result['postal_code'], 'enrichment', 'professional'):
+                        provider.postal_code = result["postal_code"]
 
                 if result.get("specialties"):
-                    log_field_change(db, npi, 'specialties', str(provider_prof.specialties), str(result['specialties']), 'enrichment', 'professional')
-                    provider_prof.specialties = result["specialties"]
+                    update_and_log_if_significant(db, npi, provider_prof, 'specialties', result['specialties'], 'enrichment', 'professional')
 
                 # ---- STEP 2: Hunter.io Email Lookup ----
                 # After enrichment, use the practice_name to find the org domain,

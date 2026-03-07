@@ -1,8 +1,10 @@
 import os
 import logging
-from typing import Dict, Any
+import json
+from typing import Dict, Any, Tuple
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse, Gather
+from Validation.groq_client import generate_text
 
 logger = logging.getLogger("HealthValidator")
 
@@ -56,44 +58,56 @@ class CallVerificationAgent:
             logger.error(f"❌ Failed to initiate Twilio call: {e}")
             return False
 
-    def generate_twiml_for_step(self, provider_id: str, step: str, provider_data: Dict[str, Any], speech_result: str = None) -> str:
+    def generate_twiml_for_step(self, provider_id: str, step: str, provider_data: Dict[str, Any], speech_result: str = None, digits: str = None) -> Tuple[str, dict]:
         """
         Generates Twilio Markup Language (TwiML) for each step of the conversation.
+        Returns the XML string and an optional dictionary of extracted updates (if LLM processed it).
         """
         response = VoiceResponse()
+        extracted_updates = {}
         
-        # Determine the next step based on the current step and speech result
         if step == "start":
-            gather = Gather(input='speech', action=f"/twilio/call/{provider_id}/step/verify_name", method="POST", timeout=5)
-            gather.say(f"Hello! This is the Health Data Validation team calling for Dr. {provider_data.get('last_name', '')}. Are you available to quickly verify your practice details? Please say yes or no.")
+            gather = Gather(input='dtmf', numDigits=10, action=f"/twilio/call/{provider_id}/step/verify_npi", method="POST", timeout=10)
+            gather.say(f"Hello! This is the Health Data Validation team calling for Dr. {provider_data.get('last_name', '')}. To verify your identity, please enter your 10 digit N.P.I number on your keypad.")
             response.append(gather)
-            response.say("We didn't receive any input. Goodbye.")
+            response.say("We didn't receive your N.P.I. Goodbye.")
             response.hangup()
             
-        elif step == "verify_name":
-            # Check if they said yes
-            if speech_result and 'yes' in speech_result.lower():
-                gather = Gather(input='speech', action=f"/twilio/call/{provider_id}/step/verify_practice", method="POST", timeout=5)
-                practice_name = provider_data.get('practice_name', 'your practice')
-                gather.say(f"Great. Can you confirm your practice name is {practice_name}? Say yes, or state the correct practice name.")
+        elif step == "verify_npi":
+            if digits and digits == provider_id:
+                gather = Gather(input='speech', action=f"/twilio/call/{provider_id}/step/process_update", method="POST", timeout=10)
+                gather.say("Thank you. Your identity is verified. What details would you like to update for your practice profile? For example, address, phone number, or practice name.")
                 response.append(gather)
             else:
-                response.say("Okay, we will try again later. Goodbye.")
+                response.say("The N.P.I number entered is invalid. Goodbye.")
                 response.hangup()
                 
-        elif step == "verify_practice":
-            gather = Gather(input='speech', action=f"/twilio/call/{provider_id}/step/verify_address", method="POST", timeout=5)
-            address = provider_data.get('address_line1', 'your current address')
-            city = provider_data.get('city', '')
-            gather.say(f"Got it. Is your primary practice address still {address} in {city}? Say yes, or state your new address.")
-            response.append(gather)
-            
-        elif step == "verify_address":
-            response.say("Thank you. We have recorded your responses and your profile is now verified. Have a great day! Goodbye.")
-            response.hangup()
-            
+        elif step == "process_update":
+            if speech_result:
+                try:
+                    # Pass speech result to LLM
+                    prompt = f"""
+                    You are a data extraction assistant. The healthcare provider just said the following on a phone call:
+                    "{speech_result}"
+                    
+                    Extract the updated information they mentioned. Output a JSON object. Possible keys: "practice_name", "address_line1", "city", "state", "postal_code", "phone", "email", "website", "accepting_new_patients", "telehealth".
+                    If no clear data is provided, return an empty object {{}}.
+                    """
+                    llm_out = generate_text(prompt, json_mode=True)
+                    extracted_updates = json.loads(llm_out)
+                    
+                    response.say("Thank you. We have recorded your updates and will apply them to your profile shortly. Goodbye.")
+                    response.hangup()
+                except Exception as e:
+                    logger.error(f"Error processing LLM update during call: {e}")
+                    response.say("An error occurred processing your request. Goodbye.")
+                    response.hangup()
+            else:
+                response.say("We couldn't hear you clearly. Goodbye.")
+                response.hangup()
+                
         else:
-            response.say("An error occurred. Goodbye.")
+            response.say("Goodbye.")
             response.hangup()
             
-        return str(response)
+        return str(response), extracted_updates

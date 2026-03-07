@@ -22,7 +22,9 @@ import {
     Database,
     Search,
     Bot,
-    UserCheck
+    UserCheck,
+    Edit3,
+    Save
 } from 'lucide-react';
 import './App.css';
 
@@ -33,6 +35,85 @@ const ProviderDetail = ({ providerId, onBack }) => {
     const [auditLog, setAuditLog] = useState([]);
     const [auditLoading, setAuditLoading] = useState(false);
     const [enriching, setEnriching] = useState(false);
+    const [callSession, setCallSession] = useState(null); // { active: boolean, logs: array }
+
+    // Manual Review State
+    const [reviewData, setReviewData] = useState(null);
+    const [reviewLoading, setReviewLoading] = useState(false);
+    const [selectedValues, setSelectedValues] = useState({});
+    const [customValues, setCustomValues] = useState({});
+    const [submittingReview, setSubmittingReview] = useState(false);
+
+    useEffect(() => {
+        if (activeTab === 'review' && providerId) {
+            const fetchReviewData = async () => {
+                setReviewLoading(true);
+                try {
+                    const res = await fetch(`http://localhost:8000/providers/${providerId}/manual-review`);
+                    const data = await res.json();
+                    setReviewData(data);
+                } catch (err) {
+                    console.error('Failed to fetch review data:', err);
+                } finally {
+                    setReviewLoading(false);
+                }
+            };
+            fetchReviewData();
+        }
+    }, [activeTab, providerId]);
+
+    const handleSelectValue = (field, source, value) => {
+        setSelectedValues(prev => ({
+            ...prev,
+            [field]: { source, value }
+        }));
+    };
+
+    const handleCustomValueChange = (field, value) => {
+        setCustomValues(prev => ({
+            ...prev,
+            [field]: value
+        }));
+        // Select custom automatically
+        handleSelectValue(field, 'custom', value);
+    };
+
+    const submitManualReview = async () => {
+        const updates = {};
+        Object.keys(selectedValues).forEach(field => {
+            updates[field] = selectedValues[field].value;
+        });
+
+        if (Object.keys(updates).length === 0) {
+            alert("No changes selected.");
+            return;
+        }
+
+        setSubmittingReview(true);
+        try {
+            const res = await fetch(`http://localhost:8000/providers/${providerId}/manual-review`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ updates })
+            });
+            const data = await res.json();
+            if (data.success) {
+                alert("Golden Record created successfully!");
+                // Refresh data
+                const refreshRes = await fetch(`http://localhost:8000/providers/${providerId}`);
+                const refreshedData = await refreshRes.json();
+                setProvider(refreshedData);
+                setActiveTab('overview');
+            } else {
+                alert("Failed: " + data.message);
+            }
+        } catch (err) {
+            alert("Error: " + err.message);
+        } finally {
+            setSubmittingReview(false);
+        }
+    };
+
 
     useEffect(() => {
         const fetchDetail = async () => {
@@ -67,6 +148,129 @@ const ProviderDetail = ({ providerId, onBack }) => {
             fetchAuditLog();
         }
     }, [activeTab, providerId]);
+
+    const renderManualReviewTab = () => {
+        if (reviewLoading) {
+            return (
+                <div style={{ display: 'flex', justifyContent: 'center', padding: '4rem 2rem' }}>
+                    <Loader2 size={32} className="spin" style={{ color: 'hsl(217, 91%, 60%)' }} />
+                </div>
+            );
+        }
+
+        if (!reviewData || Object.keys(reviewData).length === 0) {
+            return (
+                <div className="detail-card" style={{ textAlign: 'center', padding: '3rem 2rem' }}>
+                    <p style={{ color: 'hsl(228, 8%, 55%)' }}>No review data available for this provider yet.</p>
+                </div>
+            );
+        }
+
+        return (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="detail-card" style={{ overflowX: 'auto' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+                    <h3 style={{ margin: 0, border: 'none', padding: 0 }}>Create Golden Record</h3>
+                    <button
+                        onClick={submitManualReview}
+                        disabled={submittingReview}
+                        className="action-button primary"
+                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                    >
+                        {submittingReview ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
+                        Save Golden Record
+                    </button>
+                </div>
+
+                
+                <table className="review-table">
+                    <thead>
+                        <tr>
+                            <th>Attribute</th>
+                            <th>NPI Source</th>
+                            <th>Web Enrichment</th>
+                            <th>Email Result</th>
+                            <th>Call Result</th>
+                            <th>Custom Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {Object.entries(reviewData).filter(([field]) => !['status', 'overall_confidence', 'confidence_score'].includes(field)).map(([field, sourcesData]) => (
+                            <tr key={field} style={{ borderBottom: '1px solid hsla(228, 12%, 18%, 0.5)' }}>
+                                <td>{formatFieldName(field)}</td>
+
+                                {/* NPI Source */}
+                                <td>
+                                    {sourcesData['npi_lookup'] && (
+                                        <div
+                                            onClick={() => handleSelectValue(field, 'npi_lookup', sourcesData['npi_lookup'])}
+                                            className={`review-selection-card ${selectedValues[field]?.source === 'npi_lookup' ? 'selected' : ''}`}
+                                        >
+                                            {sourcesData['npi_lookup']}
+                                        </div>
+                                    )}
+                                </td>
+
+                                {/* Web Enrichment */}
+                                <td>
+                                    {sourcesData['enrichment'] && (
+                                        <div
+                                            onClick={() => handleSelectValue(field, 'enrichment', sourcesData['enrichment'])}
+                                            className={`review-selection-card ${selectedValues[field]?.source === 'enrichment' ? 'selected' : ''}`}
+                                        >
+                                            {sourcesData['enrichment']}
+                                        </div>
+                                    )}
+                                </td>
+
+                                {/* Email Result (Hunter/Verification) */}
+                                <td>
+                                    {(sourcesData['hunter_io'] || sourcesData['verification']) && (
+                                        <div
+                                            onClick={() => handleSelectValue(field, 'hunter', sourcesData['hunter_io'] || sourcesData['verification'])}
+                                            className={`review-selection-card ${selectedValues[field]?.source === 'hunter' ? 'selected' : ''}`}
+                                        >
+                                            {sourcesData['verification'] || sourcesData['hunter_io']}
+                                        </div>
+                                    )}
+                                </td>
+
+                                {/* Call Result */}
+                                <td>
+                                    {sourcesData['phone_verification'] && (
+                                        <div
+                                            onClick={() => handleSelectValue(field, 'phone_verification', sourcesData['phone_verification'])}
+                                            className={`review-selection-card ${selectedValues[field]?.source === 'phone_verification' ? 'selected' : ''}`}
+                                        >
+                                            {sourcesData['phone_verification']}
+                                        </div>
+                                    )}
+                                </td>
+
+                                {/* Custom Value */}
+                                <td>
+                                    <div className="review-custom-input-container">
+                                        <input
+                                            type="radio"
+                                            checked={selectedValues[field]?.source === 'custom'}
+                                            onChange={() => handleSelectValue(field, 'custom', customValues[field] || provider[field] || '')}
+                                        />
+                                        <input
+                                            type="text"
+                                            placeholder="Enter text..."
+                                            value={customValues[field] || ''}
+                                            onChange={(e) => handleCustomValueChange(field, e.target.value)}
+                                            onFocus={() => handleSelectValue(field, 'custom', customValues[field] || '')}
+                                        />
+                                    </div>
+                                </td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+
+            </motion.div>
+        );
+    };
 
     if (loading) {
         return (
@@ -575,14 +779,61 @@ const ProviderDetail = ({ providerId, onBack }) => {
                         <button
                             onClick={async () => {
                                 try {
+                                    setCallSession({ active: true, logs: [{ time: new Date().toLocaleTimeString(), text: "Initiating call...", type: 'system' }] });
                                     const res = await fetch(`http://localhost:8000/providers/${provider.npi}/call`, { method: 'POST' });
                                     const data = await res.json();
+
                                     if (data.success) {
-                                        alert(data.message);
+                                        setCallSession(prev => ({ ...prev, logs: [...prev.logs, { time: new Date().toLocaleTimeString(), text: "Ringing provider...", type: 'system' }] }));
+
+                                        // Connect to SSE stream
+                                        const eventSource = new EventSource(`http://localhost:8000/providers/${provider.npi}/call-stream`);
+
+                                        eventSource.onmessage = (event) => {
+                                            const eventData = JSON.parse(event.data);
+
+                                            setCallSession(prev => {
+                                                const newLogs = [...(prev?.logs || [])];
+
+                                                if (eventData.step === 'start') {
+                                                    newLogs.push({ time: new Date().toLocaleTimeString(), text: "Call connected. Asking for NPI verification...", type: 'system' });
+                                                } else if (eventData.step === 'verify_npi') {
+                                                    if (eventData.digits) {
+                                                        newLogs.push({ time: new Date().toLocaleTimeString(), text: `Provider entered NPI: ${eventData.digits}`, type: 'provider' });
+                                                    }
+                                                } else if (eventData.step === 'process_update') {
+                                                    if (eventData.speech) {
+                                                        newLogs.push({ time: new Date().toLocaleTimeString(), text: `Provider said: "${eventData.speech}"`, type: 'provider' });
+                                                    }
+                                                } else if (eventData.step === 'completed') {
+                                                    newLogs.push({ time: new Date().toLocaleTimeString(), text: `Updates parsed by AI: ${JSON.stringify(eventData.updates)}`, type: 'ai' });
+                                                    newLogs.push({ time: new Date().toLocaleTimeString(), text: "Call ended successfully. Refreshing data...", type: 'system' });
+
+                                                    // Stop listening and close after a few seconds
+                                                    eventSource.close();
+                                                    setTimeout(() => {
+                                                        setCallSession(null);
+                                                        // force a re-fetch of the provider
+                                                        fetch(`http://localhost:8000/providers/${provider.npi}`)
+                                                            .then(r => r.json())
+                                                            .then(d => setProvider(d));
+                                                    }, 5000);
+                                                }
+
+                                                return { ...prev, logs: newLogs };
+                                            });
+                                        };
+
+                                        eventSource.onerror = () => {
+                                            eventSource.close();
+                                        };
+
                                     } else {
+                                        setCallSession(null);
                                         alert("Failed to initiate call.");
                                     }
                                 } catch (err) {
+                                    setCallSession(null);
                                     alert("Error: " + err.message);
                                 }
                             }}
@@ -667,6 +918,13 @@ const ProviderDetail = ({ providerId, onBack }) => {
                     {auditLog.length > 0 && (
                         <span className="tab-badge">{auditLog.length}</span>
                     )}
+                </button>
+                <button
+                    className={`detail-tab ${activeTab === 'review' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('review')}
+                >
+                    <Edit3 size={16} />
+                    Manual Review
                 </button>
             </div>
 
@@ -798,6 +1056,16 @@ const ProviderDetail = ({ providerId, onBack }) => {
                             </motion.div>
                         )}
                     </motion.div>
+                ) : activeTab === 'review' ? (
+                    <motion.div
+                        key="review"
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.2 }}
+                    >
+                        {renderManualReviewTab()}
+                    </motion.div>
                 ) : (
                     <motion.div
                         key="history"
@@ -807,6 +1075,93 @@ const ProviderDetail = ({ providerId, onBack }) => {
                         transition={{ duration: 0.2 }}
                     >
                         {renderHistoryTab()}
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Live Call Popup */}
+            <AnimatePresence>
+                {callSession?.active && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 50, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 50, scale: 0.95 }}
+                        style={{
+                            position: 'fixed',
+                            bottom: '2rem',
+                            right: '2rem',
+                            width: '350px',
+                            background: 'hsl(228, 12%, 11%)',
+                            border: '1px solid hsl(228, 12%, 25%)',
+                            borderRadius: '12px',
+                            boxShadow: '0 8px 32px rgba(0,0,0,0.5)',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            overflow: 'hidden',
+                            zIndex: 1000
+                        }}
+                    >
+                        {/* Header */}
+                        <div style={{
+                            padding: '1rem',
+                            borderBottom: '1px solid hsl(228, 12%, 18%)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'space-between',
+                            background: 'hsl(228, 15%, 13%)'
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <div style={{
+                                    width: '10px',
+                                    height: '10px',
+                                    borderRadius: '50%',
+                                    background: 'hsl(160, 84%, 39%)',
+                                    boxShadow: '0 0 8px hsl(160, 84%, 39%)'
+                                }} />
+                                <span style={{ fontWeight: 600, fontSize: '0.9375rem' }}>Live Verification Call</span>
+                            </div>
+                            <button
+                                onClick={() => setCallSession(null)}
+                                style={{ background: 'transparent', border: 'none', color: 'hsl(228, 8%, 55%)', cursor: 'pointer' }}
+                            >
+                                <XCircle size={16} />
+                            </button>
+                        </div>
+
+                        {/* Transcript Area */}
+                        <div style={{
+                            padding: '1rem',
+                            maxHeight: '300px',
+                            overflowY: 'auto',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.75rem'
+                        }}>
+                            {callSession.logs.map((log, i) => (
+                                <div key={i} style={{
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    alignItems: log.type === 'provider' ? 'flex-end' : 'flex-start',
+                                }}>
+                                    <span style={{ fontSize: '0.65rem', color: 'hsl(228, 8%, 40%)', marginBottom: '2px' }}>
+                                        {log.time} {log.type === 'system' ? '- System' : log.type === 'ai' ? '- AI Parser' : '- Provider'}
+                                    </span>
+                                    <div style={{
+                                        background: log.type === 'provider' ? 'hsl(217, 91%, 60%)' :
+                                            log.type === 'ai' ? 'hsl(280, 70%, 60%)' :
+                                                'hsl(228, 12%, 18%)',
+                                        color: 'white',
+                                        padding: '0.5rem 0.75rem',
+                                        borderRadius: '8px',
+                                        fontSize: '0.8125rem',
+                                        maxWidth: '90%',
+                                        lineHeight: 1.4
+                                    }}>
+                                        {log.text}
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
                     </motion.div>
                 )}
             </AnimatePresence>

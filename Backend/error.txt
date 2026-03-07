@@ -1,0 +1,86 @@
+Traceback (most recent call last):
+  File "asyncpg/protocol/prepared_stmt.pyx", line 175, in asyncpg.protocol.protocol.PreparedStatementState._encode_bind_msg
+  File "asyncpg/protocol/codecs/base.pyx", line 251, in asyncpg.protocol.protocol.Codec.encode
+  File "asyncpg/protocol/codecs/base.pyx", line 231, in asyncpg.protocol.protocol.Codec.encode_in_python
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 1220, in _jsonb_encoder
+    return b"\x01" + str_value.encode()
+AttributeError: 'dict' object has no attribute 'encode'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 550, in _prepare_and_execute
+    self._rows = deque(await prepared_stmt.fetch(*parameters))
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\asyncpg\prepared_stmt.py", line 177, in fetch
+    data = await self.__bind_execute(args, 0, timeout)
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\asyncpg\prepared_stmt.py", line 268, in __bind_execute
+    data, status, _ = await self.__do_execute(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\asyncpg\prepared_stmt.py", line 257, in __do_execute
+    return await executor(protocol)
+  File "asyncpg/protocol/protocol.pyx", line 184, in bind_execute
+  File "asyncpg/protocol/prepared_stmt.pyx", line 204, in asyncpg.protocol.protocol.PreparedStatementState._encode_bind_msg
+asyncpg.exceptions.DataError: invalid input for query argument $12: {} ('dict' object has no attribute 'encode')
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 585, in execute
+    self._adapt_connection.await_(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 132, in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 196, in greenlet_spawn
+    value = await result
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 563, in _prepare_and_execute
+    self._handle_exception(error)
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 513, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 797, in _handle_exception
+    raise translated_error from error
+sqlalchemy.dialects.postgresql.asyncpg.AsyncAdapt_asyncpg_dbapi.Error: <class 'asyncpg.exceptions.DataError'>: invalid input for query argument $12: {} ('dict' object has no attribute 'encode')
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<string>", line 8, in main
+  File "C:\Users\Dhile\Projects\Health Data Validation\EY\Backend\update_npi.py", line 28, in change_npi
+    await conn.execute(text(f"INSERT INTO providers_master_per ({','.join(insert_cols)}) VALUES ({','.join(insert_vals)})"), params)
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\ext\asyncio\engine.py", line 659, in execute
+    result = await greenlet_spawn(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 201, in greenlet_spawn
+    result = context.throw(*sys.exc_info())
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\engine\base.py", line 1419, in execute
+    return meth(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\sql\elements.py", line 527, in _execute_on_connection
+    return connection._execute_clauseelement(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\engine\base.py", line 1641, in _execute_clauseelement
+    ret = self._execute_context(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\engine\base.py", line 1846, in _execute_context
+    return self._exec_single_context(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\engine\base.py", line 1986, in _exec_single_context
+    self._handle_dbapi_exception(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\engine\base.py", line 2363, in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\engine\base.py", line 1967, in _exec_single_context
+    self.dialect.do_execute(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\engine\default.py", line 952, in do_execute
+    cursor.execute(statement, parameters)
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 585, in execute
+    self._adapt_connection.await_(
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 132, in await_only
+    return current.parent.switch(awaitable)  # type: ignore[no-any-return,attr-defined] # noqa: E501
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\util\_concurrency_py3k.py", line 196, in greenlet_spawn
+    value = await result
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 563, in _prepare_and_execute
+    self._handle_exception(error)
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 513, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+  File "C:\Users\Dhile\AppData\Local\Programs\Python\Python310\lib\site-packages\sqlalchemy\dialects\postgresql\asyncpg.py", line 797, in _handle_exception
+    raise translated_error from error
+sqlalchemy.exc.DBAPIError: (sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.DataError'>: invalid input for query argument $12: {} ('dict' object has no attribute 'encode')
+[SQL: INSERT INTO providers_master_per (npi,display_name,first_name,last_name,phone,email,address_line1,city,state,postal_code,country,field_metadata,sex) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)]
+[parameters: ('111', 'Dhileepan B', 'Dhileepan', 'B', '6369764886', 'dhileepansb@gmail.com', 'Dharapuram', None, None, None, 'US', {}, None)]
+(Background on this error at: https://sqlalche.me/e/20/dbapi)

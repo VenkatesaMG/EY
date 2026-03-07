@@ -651,7 +651,7 @@ select option {
   letter-spacing: 0.03em;
 }
 
-.badge.verified,
+/* Green for active/completed/VALID */
 .badge.VALID,
 .badge.completed,
 .badge.active {
@@ -678,6 +678,7 @@ select option {
 }
 
 .badge.enriched,
+.badge.verified,
 .badge.processing {
   background: hsl(var(--info-muted));
   color: hsl(var(--info));
@@ -1285,4 +1286,256 @@ select option {
     flex: 1;
     justify-content: center;
   }
+}
+
+/* ============================================
+   Manual Review Selection Cards
+   ============================================ */
+.review-selection-card {
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-md);
+  border: 1px solid hsl(var(--border));
+  background: hsl(var(--card));
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  color: hsl(var(--muted-foreground));
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  position: relative;
+  overflow: hidden;
+  height: 100%;
+}
+
+.review-selection-card:hover {
+  background: hsl(var(--card-hover));
+  border-color: hsl(var(--border-hover));
+  color: hsl(var(--foreground));
+  transform: translateY(-1px);
+}
+
+.review-selection-card.selected {
+  border-color: hsl(var(--primary));
+  background: hsla(217, 91%, 60%, 0.1);
+  color: hsl(var(--foreground));
+  box-shadow: 0 0 0 1px hsl(var(--primary));
+}
+
+.review-selection-card.selected::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 4px;
+  background: hsl(var(--primary));
+}
+
+.review-custom-input-container {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: hsla(228, 12%, 18%, 0.3);
+  border-radius: var(--radius-md);
+  border: 1px solid hsl(var(--border));
+  transition: all var(--transition-fast);
+  height: 100%;
+}
+
+.review-custom-input-container:focus-within {
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 0 2px hsla(217, 91%, 60%, 0.2);
+}
+
+.review-custom-input-container input[type="radio"] {
+  width: auto;
+  accent-color: hsl(var(--primary));
+  margin: 0;
+  cursor: pointer;
+}
+
+.review-custom-input-container input[type="text"] {
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: hsl(var(--foreground));
+  font-size: 0.875rem;
+  width: 100%;
+}
+
+.review-custom-input-container input[type="text"]:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.review-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 0.5rem;
+  text-align: left;
+  min-width: 900px;
+}
+
+.review-table th {
+  padding: 0.5rem 1rem;
+  color: hsl(var(--muted-foreground));
+  font-weight: 500;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid hsl(var(--border));
+}
+
+.review-table td {
+  padding: 0.5rem 0.5rem;
+  vertical-align: stretch;
+}
+
+.review-table td:first-child {
+  padding-left: 0;
+  font-weight: 600;
+  color: hsl(var(--foreground));
+  font-size: 0.9375rem;
+  width: 15%;
+}
+
+/* ============================================
+   Premium Dashboard Enhancements
+   ============================================ */
+
+.modern-table {
+  border-collapse: separate;
+  border-spacing: 0 0.5rem;
+  background: transparent;
+  border: none;
+}
+
+.modern-table th {
+  background: transparent;
+  border-bottom: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: hsl(var(--subtle-foreground));
+  padding: 0.5rem 1rem;
+}
+
+.modern-table td {
+  background: hsl(var(--card));
+  border: 1px solid hsl(var(--border)) !important;
+  border-left: none !important;
+  border-right: none !important;
+  padding: 1rem 1.25rem;
+  transition: all 0.2s ease;
+}
+
+.modern-table td:first-child {
+  border-left: 1px solid hsl(var(--border)) !important;
+  border-top-left-radius: 12px;
+  border-bottom-left-radius: 12px;
+}
+
+.modern-table td:last-child {
+  border-right: 1px solid hsl(var(--border)) !important;
+  border-top-right-radius: 12px;
+  border-bottom-right-radius: 12px;
+}
+
+.table-row-hover {
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+.table-row-hover:hover td {
+  background: hsl(var(--card-hover));
+  border-color: hsl(var(--border-hover)) !important;
+}
+
+.table-row-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px -10px rgba(0, 0, 0, 0.5);
+  position: relative;
+  z-index: 10;
+}
+
+.icon-action-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: hsl(var(--background-elevated));
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--border));
+  cursor: pointer;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.icon-action-btn:hover {
+  background: hsl(var(--card-hover));
+  color: hsl(var(--foreground));
+  border-color: hsl(var(--border-hover));
+}
+
+.icon-action-btn.primary-hover:hover {
+  background: hsl(var(--primary));
+  color: white;
+  border-color: hsl(var(--primary));
+  box-shadow: 0 0 15px hsla(217, 91%, 60%, 0.4);
+}
+
+.panel-glow-warning::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  width: 80%;
+  height: 150px;
+  background: radial-gradient(ellipse at top, hsla(43, 96%, 56%, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.panel-glow-success::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  width: 80%;
+  height: 150px;
+  background: radial-gradient(ellipse at top, hsla(217, 91%, 60%, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.panel-glow-purple::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  width: 80%;
+  height: 150px;
+  background: radial-gradient(ellipse at top, hsla(270, 80%, 60%, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.panel-glow-info::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 10%;
+  width: 80%;
+  height: 150px;
+  background: radial-gradient(ellipse at top, hsla(199, 89%, 48%, 0.15) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+.glass-panel {
+  background: hsla(228, 12%, 18%, 0.3) !important;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid hsla(228, 8%, 55%, 0.2) !important;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
 }
