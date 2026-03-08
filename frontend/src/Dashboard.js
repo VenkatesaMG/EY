@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, RefreshCw, ChevronRight, AlertCircle, Loader2, Map, ArrowRight, Mail, CheckCircle, Globe } from 'lucide-react';
+import { Users, RefreshCw, ChevronRight, AlertCircle, Loader2, Map, ArrowRight, Mail, CheckCircle, Globe, Phone } from 'lucide-react';
 import './App.css';
 
 const StatCard = ({ title, value, color }) => (
@@ -165,9 +165,36 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
     });
 
     // Stay in 'NPI Checked' until explicitly enriched or self-verified
-    const needsReviewProviders = providers.filter(p => {
-        return p.status !== 'verified_by_provider' && p.status !== 'verified' && p.status !== 'enriched';
-    });
+    // Sort by confidence: Low to High as requested
+    const needsReviewProviders = providers
+        .filter(p => {
+            return p.status !== 'verified_by_provider' && p.status !== 'verified' && p.status !== 'enriched';
+        })
+        .sort((a, b) => (a.overall_confidence || 0) - (b.overall_confidence || 0));
+
+    const handleBatchCall = async () => {
+        const providersList = selfVerifiedProviders;
+        if (!window.confirm(`Start batch calls for ${providersList.length} self-verified providers?`)) return;
+
+        try {
+            const npiList = providersList.map(p => p.npi);
+            const response = await fetch('http://localhost:8000/providers/batch-call', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ npi_list: npiList })
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.detail || 'Failed to start batch calls');
+            }
+            const data = await response.json();
+            alert(data.message);
+        } catch (err) {
+            console.error("Batch call failed", err);
+            alert(`Error: ${err.message}`);
+        }
+    };
 
     // Loading State
     if (loading && providers.length === 0) {
@@ -528,20 +555,34 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                     position: 'relative',
                     overflow: 'hidden'
                 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '2rem' }}>
-                        <div style={{
-                            background: 'linear-gradient(135deg, hsla(270, 80%, 60%, 0.2), hsla(270, 80%, 60%, 0.05))',
-                            padding: '0.75rem',
-                            borderRadius: '12px',
-                            color: 'hsl(270, 80%, 70%)',
-                            boxShadow: 'inset 0 0 10px hsla(270, 80%, 60%, 0.2)'
-                        }}>
-                            <Users size={24} />
+                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: '2rem', justifyContent: 'space-between' }}>
+                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            <div style={{
+                                background: 'linear-gradient(135deg, hsla(270, 80%, 60%, 0.2), hsla(270, 80%, 60%, 0.05))',
+                                padding: '0.75rem',
+                                borderRadius: '12px',
+                                color: 'hsl(270, 80%, 70%)',
+                                boxShadow: 'inset 0 0 10px hsla(270, 80%, 60%, 0.2)'
+                            }}>
+                                <Users size={24} />
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'hsl(var(--foreground))' }}>Self Verified</h3>
+                                <p style={{ fontSize: '0.85rem', color: 'hsl(var(--muted-foreground))', margin: '0.25rem 0 0 0' }}>Verified by the provider directly</p>
+                            </div>
                         </div>
-                        <div>
-                            <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0, color: 'hsl(var(--foreground))' }}>Self Verified</h3>
-                            <p style={{ fontSize: '0.85rem', color: 'hsl(var(--muted-foreground))', margin: '0.25rem 0 0 0' }}>Verified by the provider directly</p>
-                        </div>
+
+                        <motion.button
+                            whileHover={{ scale: 1.05, backgroundColor: 'hsl(var(--card-hover))' }}
+                            whileTap={{ scale: 0.95 }}
+                            className="submit-btn secondary"
+                            style={{ padding: '0.5rem 1rem', fontSize: '0.85rem', width: 'auto', borderRadius: '10px' }}
+                            onClick={handleBatchCall}
+                            disabled={selfVerifiedProviders.length === 0}
+                        >
+                            <Phone size={16} style={{ marginRight: '0.5rem', color: '#a855f7' }} />
+                            Batch Call
+                        </motion.button>
                     </div>
                     {renderTable(selfVerifiedProviders, "No self-verified providers yet.", true)}
                 </div>

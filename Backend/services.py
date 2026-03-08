@@ -454,7 +454,7 @@ class ValidationService:
             
             # 3. Update Meta
             provider.meta.raw_data_json = data
-            new_status = "needs_review" if manual_review else "verified"
+            new_status = "needs_review"  # Always move to NPI Check first
             log_field_change(db, npi_val, 'status', provider.meta.status, new_status, 'validation', 'meta')
             provider.meta.status = new_status
             provider.meta.manual_review_required = manual_review
@@ -745,67 +745,16 @@ class SubmissionPipeline:
     @staticmethod
     async def run(submission_id: int):
         try:
+            # We only run validation. Enrichment and verification are now manual or batch actions.
             await ValidationService.process_submission(submission_id)
             
-            async with AsyncSessionLocal() as db:
-                submission = await db.get(RawProviderSubmission, submission_id)
-                if not submission or submission.processing_status in ["failed", "rejected_invalid_npi"]:
-                    return
+            logger.info(f"🚀 Pipeline step 1 (Validation) complete for submission {submission_id}. Staying in 'NPI Check' for manual enrichment.")
             
-            await EnrichmentService.enrich_provider(submission_id)
-            
-            # Email Verification Step
-            async with AsyncSessionLocal() as db:
-                submission = await db.get(RawProviderSubmission, submission_id)
-                if submission:
-                    submission.processing_status = "email_verifying"
-                    await db.commit()
-                    
-                    provider = await db.scalar(select(ProviderPersonal).where(ProviderPersonal.npi == submission.npi))
-                    if provider and provider.email:
-                        from Agents.email_agent import EmailVerificationAgent
-                        email_agent = EmailVerificationAgent(base_url="http://localhost:3000")
-                        token = email_agent.generate_verification_token()
-                        
-                        meta = await db.scalar(select(ProviderMeta).where(ProviderMeta.npi == provider.npi))
-                        if meta:
-                            meta.verification_token = token
-                            from datetime import datetime, timedelta
-                            meta.token_expires_at = datetime.utcnow() + timedelta(hours=48)
-                            await db.commit()
-                            
-                        link = email_agent.create_verification_link(token)
-                        email_agent.send_verification_email(
-                            recipient_email=provider.email,
-                            recipient_name=provider.display_name or "Doctor",
-                            verification_link=link
-                        )
-            
-            # Phone Call Verification Step
-            async with AsyncSessionLocal() as db:
-                submission = await db.get(RawProviderSubmission, submission_id)
-                if submission:
-                    submission.processing_status = "call_verifying"
-                    await db.commit()
-                    
-                    provider = await db.scalar(select(ProviderPersonal).where(ProviderPersonal.npi == submission.npi))
-                    if provider and provider.phone:
-                        from Agents.call_agent import CallVerificationAgent
-                        import os
-                        webhook_base = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
-                        call_agent = CallVerificationAgent(webhook_base_url=webhook_base)
-                        call_agent.initiate_verification_call(
-                            provider_id=provider.npi,
-                            to_number=provider.phone,
-                            provider_name=provider.display_name or provider.last_name or "Doctor"
-                        )
-            
-            # Final Step
-            async with AsyncSessionLocal() as db:
-                submission = await db.get(RawProviderSubmission, submission_id)
-                if submission:
-                    submission.processing_status = "pipeline_complete"
-                    await db.commit()
-                    
         except Exception as e:
-            logger.error(f"Pipeline error: {e}")
+            logger.error(f"❌ Pipeline Failed: {e}")
+            async with AsyncSessionLocal() as db:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                if submission:
+                    submission.processing_status = "failed"
+                    submission.error_message = str(e)
+                    await db.commit()

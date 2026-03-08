@@ -991,6 +991,51 @@ async def batch_enrich_providers(
     return {"message": f"Started enrichment for {count} providers"}
 
 
+@app.post("/providers/batch-call")
+async def batch_call_providers(
+    request: Request,
+    background_tasks: BackgroundTasks,
+    data: dict = Body(...),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Trigger phone calls for a batch of providers.
+    """
+    npi_list = data.get("npi_list", [])
+    if not npi_list:
+        raise HTTPException(status_code=400, detail="No NPI list provided")
+    
+    # helper for call
+    async def run_call(npi_id: str):
+        # We need a new session per task usually, or carefully use the one we have
+        # But BackgroundTasks in FastAPI doesn't easily share the request session if it's already closed
+        # EnrichmentService.enrich_provider handles its own session, let's do similar for call
+        async with AsyncSessionLocal() as dbs:
+            res = await dbs.execute(select(ProviderPersonal).filter(ProviderPersonal.npi == npi_id))
+            p = res.scalars().first()
+            if p and p.phone:
+                import os
+                webhook_base = os.getenv("WEBHOOK_BASE_URL")
+                if not webhook_base:
+                    # Fallback — though in prod this MUST be set
+                    webhook_base = "http://localhost:8000"
+                
+                from Agents.call_agent import CallVerificationAgent
+                agent = CallVerificationAgent(webhook_base_url=webhook_base)
+                agent.initiate_verification_call(
+                    provider_id=p.npi,
+                    to_number=p.phone,
+                    provider_name=p.display_name or p.last_name or "Doctor"
+                )
+
+    count = 0
+    for npi in npi_list:
+         background_tasks.add_task(run_call, npi)
+         count += 1
+         
+    return {"message": f"Initiated calls for {count} providers"}
+
+
 @app.get("/providers/{provider_id}/audit-log")
 async def get_provider_audit_log(provider_id: str, db: AsyncSession = Depends(get_db)):
     """
