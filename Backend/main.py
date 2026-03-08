@@ -123,6 +123,18 @@ async def update_scheduler_config(config: ScheduleConfig):
 
 # --- Endpoints ---
 
+class StatusUpdate(BaseModel):
+    submission_id: int
+    detail: str
+
+@app.post("/internal/update_status")
+async def update_status_detail(update: StatusUpdate, db: AsyncSession = Depends(get_db)):
+    sub = await db.get(RawProviderSubmission, update.submission_id)
+    if sub:
+        sub.error_message = update.detail
+        await db.commit()
+    return {"status": "ok"}
+
 @app.delete("/admin/reset")
 async def reset_database(db: AsyncSession = Depends(get_db)):
     """
@@ -270,30 +282,43 @@ async def get_submission_status(submission_id: int, db: AsyncSession = Depends(g
             elif status == "npi_lookup":
                 return "in_progress"
             elif status in ["failed", "rejected_invalid_npi"]:
-                return "failed" if not submission.npi_api_response else "completed"
+                return "failed"
             else:
-                return "completed" if submission.npi_api_response else "pending"
+                return "completed"
         
-        elif step_name == "ai_validation":
+
+        elif step_name == "enrichment":
             if status in ["queued", "npi_lookup"]:
                 return "pending"
-            elif status == "validating":
+            elif status in ["validation_complete", "enriching", "validating"]:
                 return "in_progress"
-            elif status == "failed_validation":
-                return "failed"
-            elif status in ["processed", "enriching", "enriched"]:
+            elif status in ["enriched", "processed", "email_verifying", "call_verifying", "pipeline_complete"]:
                 return "completed"
             else:
-                return "completed" if provider_data else "pending"
-        
-        elif step_name == "enrichment":
-            if status in ["queued", "npi_lookup", "validating"]:
                 return "pending"
-            elif status == "enriching":
+                
+        elif step_name == "email":
+            if status in ["queued", "npi_lookup", "validation_complete", "validating", "processed", "enriching", "enriched"]:
+                return "pending"
+            elif status == "email_verifying":
                 return "in_progress"
-            elif status == "enriched":
+            elif status in ["call_verifying", "pipeline_complete"]:
                 return "completed"
-            elif status == "processed":
+            else:
+                return "pending"
+                
+        elif step_name == "call":
+            if status in ["queued", "npi_lookup", "validation_complete", "validating", "processed", "enriching", "enriched", "email_verifying"]:
+                return "pending"
+            elif status == "call_verifying":
+                return "in_progress"
+            elif status in ["pipeline_complete"]:
+                return "completed"
+            else:
+                return "pending"
+                
+        elif step_name == "final_review":
+            if status == "pipeline_complete":
                 return "completed"
             else:
                 return "pending"
@@ -309,8 +334,10 @@ async def get_submission_status(submission_id: int, db: AsyncSession = Depends(g
         "steps": {
             "submitted": get_step_status("submitted"),
             "npi_lookup": get_step_status("npi_lookup"),
-            "ai_validation": get_step_status("ai_validation"),
-            "enrichment": get_step_status("enrichment")
+            "enrichment": get_step_status("enrichment"),
+            "email": get_step_status("email"),
+            "call": get_step_status("call"),
+            "final_review": get_step_status("final_review")
         }
     }
 
@@ -463,6 +490,7 @@ async def get_provider(provider_id: str, db: AsyncSession = Depends(get_db)):
         "taxonomy_status": meta.taxonomy_status,
         "taxonomy_confidence": meta.taxonomy_confidence,
         "last_verified": meta.last_verified,
+        "field_metadata": {**(p.field_metadata or {}), **(prof.field_metadata or {})},
         "raw_json": meta.raw_data_json
     }
 

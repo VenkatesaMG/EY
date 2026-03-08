@@ -254,11 +254,24 @@ class EnrichmentManager:
             "accepting_new_patients": true/false/null,
             "telehealth": true/false/null,
             "languages": ["Language 1", "Language 2"],
-            "overall_confidence": 0.0 to 1.0
+            "overall_confidence": 0.0 to 1.0,
+            "sources": {
+                "phone": "https://SOURCE_URL...",
+                "address_line1": "https://SOURCE_URL...",
+                "specialties": "https://..."
+            }
         }
         """
 
-    def enrich_profile(self, partial_profile: dict):
+    def enrich_profile(self, partial_profile: dict, submission_id: int = None):
+        def update_status(msg):
+            if not submission_id: return
+            try:
+                requests.post("http://localhost:8000/internal/update_status", 
+                            json={"submission_id": submission_id, "detail": f"INFO: {msg}"}, 
+                            timeout=2)
+            except: pass
+
         # 1. SETUP SEARCH (Python Logic)
         name = f"{partial_profile.get('first_name')} {partial_profile.get('last_name')}"
         location = f"{partial_profile.get('city')} {partial_profile.get('state')}"
@@ -274,6 +287,7 @@ class EnrichmentManager:
         driver = None
         
         try:
+            update_status("Initializing headless crawler...")
             # 2. GATHER DATA with FRESH DRIVER
             driver = create_driver()
             
@@ -281,17 +295,25 @@ class EnrichmentManager:
             for q in queries:
                 if not driver: break 
                 
+                update_status(f"Searching web for: {q}")
                 urls = search_web_with_driver(driver, q)
                 # We only take the top 1-2 results per query to keep the prompt clean for 8B
                 for url in urls[:2]: 
                     if url in seen_urls: continue
                     seen_urls.add(url)
                     
+                    try:
+                        domain = urlparse(url).netloc
+                    except:
+                        domain = url
+                        
+                    update_status(f"Scraping {domain}...")
                     content = scrape_webpage_with_driver(driver, url)
                     if content:
                         # We inject the Source URL so the LLM can fill the 'website' field
                         collected_context.append(f"SOURCE_URL: {url}\nPAGE_CONTENT: {content}\n---")
                         
+            update_status("Running LLM extraction on scraped data...")
         except Exception as e:
             print(f"Driver/Search Error: {e}")
         finally:

@@ -181,7 +181,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                     </button>
                 </div>
 
-                
+
                 <table className="review-table">
                     <thead>
                         <tr>
@@ -454,7 +454,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
         </div>
     );
 
-    const InfoField = ({ icon: Icon, label, value, isLink = false }) => (
+    const InfoField = ({ icon: Icon, label, value, isLink = false, sourceUrl = null }) => (
         <div style={{
             display: 'flex',
             alignItems: 'center',
@@ -474,31 +474,55 @@ const ProviderDetail = ({ providerId, onBack }) => {
             }}>
                 <Icon size={18} color="hsl(217, 91%, 60%)" />
             </div>
-            <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '0.75rem', color: 'hsl(228, 8%, 55%)', marginBottom: '0.125rem' }}>
-                    {label}
+            <div style={{ flex: 1, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                    <div style={{ fontSize: '0.75rem', color: 'hsl(228, 8%, 55%)', marginBottom: '0.125rem' }}>
+                        {label}
+                    </div>
+                    {isLink && value ? (
+                        <a
+                            href={value.startsWith('http') ? value : `https://${value}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            style={{
+                                color: 'hsl(217, 91%, 60%)',
+                                textDecoration: 'none',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '0.25rem',
+                                fontSize: '0.9375rem'
+                            }}
+                        >
+                            {value}
+                            <ExternalLink size={12} />
+                        </a>
+                    ) : (
+                        <div style={{ fontSize: '0.9375rem', color: 'hsl(0, 0%, 98%)' }}>
+                            {value || 'Not provided'}
+                        </div>
+                    )}
                 </div>
-                {isLink && value ? (
+                {typeof sourceUrl === 'string' && value && value !== 'Not provided' && (
                     <a
-                        href={value.startsWith('http') ? value : `https://${value}`}
+                        href={sourceUrl.startsWith('http') ? sourceUrl : `https://${sourceUrl}`}
                         target="_blank"
                         rel="noopener noreferrer"
                         style={{
-                            color: 'hsl(217, 91%, 60%)',
+                            color: 'hsl(160, 84%, 39%)',
+                            background: 'hsla(160, 84%, 39%, 0.1)',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
                             textDecoration: 'none',
                             display: 'flex',
                             alignItems: 'center',
-                            gap: '0.25rem',
-                            fontSize: '0.9375rem'
+                            gap: '0.3rem',
+                            fontSize: '0.7rem'
                         }}
+                        title="Source of this information"
                     >
-                        {value}
-                        <ExternalLink size={12} />
+                        <Globe size={10} />
+                        Source
                     </a>
-                ) : (
-                    <div style={{ fontSize: '0.9375rem', color: 'hsl(0, 0%, 98%)' }}>
-                        {value || 'Not provided'}
-                    </div>
                 )}
             </div>
         </div>
@@ -1004,9 +1028,9 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                         <Globe size={18} style={{ marginRight: '0.5rem', verticalAlign: 'middle' }} />
                                         Contact & Enrichment
                                     </h3>
-                                    <InfoField icon={Phone} label="Phone Number" value={provider.phone} />
-                                    <InfoField icon={Mail} label="Email Address" value={provider.email} />
-                                    <InfoField icon={Globe} label="Website" value={provider.website} isLink />
+                                    <InfoField icon={Phone} label="Phone Number" value={provider.phone} sourceUrl={provider.field_metadata?.phone} />
+                                    <InfoField icon={Mail} label="Email Address" value={provider.email} sourceUrl={provider.field_metadata?.email} />
+                                    <InfoField icon={Globe} label="Website" value={provider.website} isLink sourceUrl={provider.field_metadata?.website} />
                                     <InfoField
                                         icon={MapPin}
                                         label="Full Address"
@@ -1015,6 +1039,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                             provider.address_line2,
                                             [provider.city, provider.state, provider.postal_code].filter(Boolean).join(', ')
                                         ].filter(Boolean).join(', ') || null}
+                                        sourceUrl={provider.field_metadata?.address_line1 || provider.field_metadata?.city}
                                     />
                                 </div>
                             </div>

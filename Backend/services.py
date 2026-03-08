@@ -83,12 +83,24 @@ def is_significant_change(field_name: str, old_val, new_val) -> bool:
             
     return True
 
-def update_and_log_if_significant(db_session, npi: str, obj, field_name: str, new_value, source: str, table_name: str = None, actor: str = "system"):
+from sqlalchemy.orm.attributes import flag_modified
+
+def update_and_log_if_significant(db_session, npi: str, obj, field_name: str, new_value, source: str, table_name: str = None, actor: str = "system", source_url: str = None):
     old_value = getattr(obj, field_name, None)
+    
     if is_significant_change(field_name, old_value, new_value):
         log_field_change(db_session, npi, field_name, old_value, new_value, source, table_name, actor)
         setattr(obj, field_name, new_value)
+        
+        if source_url and hasattr(obj, 'field_metadata'):
+            current_meta = obj.field_metadata or {}
+            new_meta = dict(current_meta)
+            new_meta[field_name] = source_url
+            obj.field_metadata = new_meta
+            flag_modified(obj, "field_metadata")
+            
         return True
+        
     return False
 
 class ValidationService:
@@ -214,11 +226,8 @@ class ValidationService:
                 
             await db.commit()
             return
-        
-        # Update status to show AI validation in progress
-        submission.processing_status = "validating"
-        await db.commit()
-        logger.info(f"🤖 Step 2: AI Validation in progress...")
+        # Log deterministic verification start
+        logger.info(f"🤖 Step 2: Conflict Resolution in progress...")
 
         # 2. Deterministic Verification & Conflict Resolution
         try:
@@ -463,7 +472,7 @@ class ValidationService:
             
             provider.meta.last_verified = datetime.utcnow()
             
-            submission.processing_status = "processed"
+            submission.processing_status = "validation_complete"
             await db.commit()
             
             # Trigger Enrichment only if we strictly need it AND not purely for correction
@@ -476,7 +485,7 @@ class ValidationService:
             
         except Exception as e:
             logger.error(f"❌ Validation Error: {e}")
-            submission.processing_status = "failed_validation"
+            submission.processing_status = "failed"
             submission.error_message = str(e)
             await db.commit()
 
@@ -558,9 +567,13 @@ class EnrichmentService:
 
             if not missing_keys:
                 if submission:
-                    submission.processing_status = "processed"
+                    submission.processing_status = "enriched"
                 await db.commit()
                 return
+
+            if submission:
+                submission.processing_status = "enriching"
+                await db.commit()
 
             # ---- build profile ----
 
@@ -582,7 +595,8 @@ class EnrichmentService:
                 result = await loop.run_in_executor(
                     None,
                     manager.enrich_profile,
-                    partial_profile
+                    partial_profile,
+                    submission_id
                 )
 
                 # ---- parse agent output ----
@@ -597,41 +611,41 @@ class EnrichmentService:
 
                 logger.info(f"✨ Enrichment Result: {json.dumps(result, indent=2)}")
 
+                sources = result.get("sources", {})
+
                 if result.get("phone"):
-                    update_and_log_if_significant(db, npi, provider, 'phone', result['phone'], 'enrichment', 'personal')
+                    update_and_log_if_significant(db, npi, provider, 'phone', result['phone'], 'enrichment', 'personal', source_url=sources.get('phone'))
 
                 if result.get("website"):
-                    update_and_log_if_significant(db, npi, provider_prof, 'website', result['website'], 'enrichment', 'professional')
+                    update_and_log_if_significant(db, npi, provider_prof, 'website', result['website'], 'enrichment', 'professional', source_url=sources.get('website'))
 
-                # Fix: Agent returns 'address_line1', not 'practice_address'
-                # For address, we allow enrichment to update the PROFESSIONAL address if found
                 if result.get("address_line1"):
-                    update_and_log_if_significant(db, npi, provider_prof, 'address_line1', result['address_line1'], 'enrichment', 'professional')
+                    update_and_log_if_significant(db, npi, provider_prof, 'address_line1', result['address_line1'], 'enrichment', 'professional', source_url=sources.get('address_line1'))
                 elif result.get("practice_address"):
-                    update_and_log_if_significant(db, npi, provider_prof, 'address_line1', result['practice_address'], 'enrichment', 'professional')
+                    update_and_log_if_significant(db, npi, provider_prof, 'address_line1', result['practice_address'], 'enrichment', 'professional', source_url=sources.get('practice_address'))
 
                 if result.get("practice_name"):
-                    update_and_log_if_significant(db, npi, provider_prof, 'practice_name', result['practice_name'], 'enrichment', 'professional')
+                    update_and_log_if_significant(db, npi, provider_prof, 'practice_name', result['practice_name'], 'enrichment', 'professional', source_url=sources.get('practice_name'))
 
                 if result.get("accepting_new_patients") is not None:
-                    update_and_log_if_significant(db, npi, provider_prof, 'accepting_new_patients', result['accepting_new_patients'], 'enrichment', 'professional')
+                    update_and_log_if_significant(db, npi, provider_prof, 'accepting_new_patients', result['accepting_new_patients'], 'enrichment', 'professional', source_url=sources.get('accepting_new_patients'))
 
                 if result.get("telehealth") is not None:
-                    update_and_log_if_significant(db, npi, provider_prof, 'telehealth', result['telehealth'], 'enrichment', 'professional')
+                    update_and_log_if_significant(db, npi, provider_prof, 'telehealth', result['telehealth'], 'enrichment', 'professional', source_url=sources.get('telehealth'))
 
                 if result.get("city"):
-                    update_and_log_if_significant(db, npi, provider_prof, 'city', result['city'], 'enrichment', 'professional')
+                    update_and_log_if_significant(db, npi, provider_prof, 'city', result['city'], 'enrichment', 'professional', source_url=sources.get('city'))
                 
                 if result.get("state"):
-                    if update_and_log_if_significant(db, npi, provider_prof, 'state', result['state'], 'enrichment', 'professional'):
-                        provider.state = result["state"] # Sync parent table for analytics
+                    if update_and_log_if_significant(db, npi, provider_prof, 'state', result['state'], 'enrichment', 'professional', source_url=sources.get('state')):
+                        provider.state = result["state"]
 
                 if result.get("postal_code"):
-                    if update_and_log_if_significant(db, npi, provider_prof, 'postal_code', result['postal_code'], 'enrichment', 'professional'):
+                    if update_and_log_if_significant(db, npi, provider_prof, 'postal_code', result['postal_code'], 'enrichment', 'professional', source_url=sources.get('postal_code')):
                         provider.postal_code = result["postal_code"]
 
                 if result.get("specialties"):
-                    update_and_log_if_significant(db, npi, provider_prof, 'specialties', result['specialties'], 'enrichment', 'professional')
+                    update_and_log_if_significant(db, npi, provider_prof, 'specialties', result['specialties'], 'enrichment', 'professional', source_url=sources.get('specialties'))
 
                 # ---- STEP 2: Hunter.io Email Lookup ----
                 # After enrichment, use the practice_name to find the org domain,
@@ -722,5 +736,68 @@ class EnrichmentService:
 class SubmissionPipeline:
     @staticmethod
     async def run(submission_id: int):
-        await ValidationService.process_submission(submission_id)
-        await EnrichmentService.enrich_provider(submission_id)
+        try:
+            await ValidationService.process_submission(submission_id)
+            
+            async with AsyncSessionLocal() as db:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                if not submission or submission.processing_status in ["failed", "rejected_invalid_npi"]:
+                    return
+            
+            await EnrichmentService.enrich_provider(submission_id)
+            
+            # Email Verification Step
+            async with AsyncSessionLocal() as db:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                if submission:
+                    submission.processing_status = "email_verifying"
+                    await db.commit()
+                    
+                    provider = await db.scalar(select(ProviderPersonal).where(ProviderPersonal.npi == submission.npi))
+                    if provider and provider.email:
+                        from Agents.email_agent import EmailVerificationAgent
+                        email_agent = EmailVerificationAgent(base_url="http://localhost:3000")
+                        token = email_agent.generate_verification_token()
+                        
+                        meta = await db.scalar(select(ProviderMeta).where(ProviderMeta.npi == provider.npi))
+                        if meta:
+                            meta.verification_token = token
+                            from datetime import datetime, timedelta
+                            meta.token_expires_at = datetime.utcnow() + timedelta(hours=48)
+                            await db.commit()
+                            
+                        link = email_agent.create_verification_link(token)
+                        email_agent.send_verification_email(
+                            recipient_email=provider.email,
+                            recipient_name=provider.display_name or "Doctor",
+                            verification_link=link
+                        )
+            
+            # Phone Call Verification Step
+            async with AsyncSessionLocal() as db:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                if submission:
+                    submission.processing_status = "call_verifying"
+                    await db.commit()
+                    
+                    provider = await db.scalar(select(ProviderPersonal).where(ProviderPersonal.npi == submission.npi))
+                    if provider and provider.phone:
+                        from Agents.call_agent import CallVerificationAgent
+                        import os
+                        webhook_base = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+                        call_agent = CallVerificationAgent(webhook_base_url=webhook_base)
+                        call_agent.initiate_verification_call(
+                            provider_id=provider.npi,
+                            to_number=provider.phone,
+                            provider_name=provider.display_name or provider.last_name or "Doctor"
+                        )
+            
+            # Final Step
+            async with AsyncSessionLocal() as db:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                if submission:
+                    submission.processing_status = "pipeline_complete"
+                    await db.commit()
+                    
+        except Exception as e:
+            logger.error(f"Pipeline error: {e}")

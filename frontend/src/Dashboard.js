@@ -159,17 +159,14 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
     // Filter Logic
     const selfVerifiedProviders = providers.filter(p => p.status === 'verified_by_provider');
 
-    const needsReviewProviders = providers.filter(p => {
-        if (p.status === 'verified_by_provider') return false;
-        const score = p.overall_confidence || 0;
-        return p.status === 'needs_review' || score < 60 || p.status === 'pending' || p.status === 'processing';
+    // Only move to 'Enriched' if enrichment is explicitly done
+    const verifiedProviders = providers.filter(p => {
+        return p.status === 'verified' || p.status === 'enriched';
     });
 
-    const verifiedProviders = providers.filter(p => {
-        if (p.status === 'verified_by_provider') return false;
-        const score = p.overall_confidence || 0;
-        // Verified if status is verified/enriched OR score is high (and not explicitly flagged for review)
-        return (p.status === 'verified' || p.status === 'enriched' || score >= 60) && p.status !== 'needs_review' && p.status !== 'pending';
+    // Stay in 'NPI Checked' until explicitly enriched or self-verified
+    const needsReviewProviders = providers.filter(p => {
+        return p.status !== 'verified_by_provider' && p.status !== 'verified' && p.status !== 'enriched';
     });
 
     // Loading State

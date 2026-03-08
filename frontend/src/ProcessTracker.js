@@ -9,20 +9,23 @@ import {
     Globe,
     Sparkles,
     ArrowRight,
-    ShieldCheck
+    ShieldCheck,
+    Mail,
+    Phone,
 } from 'lucide-react';
-import USMapAnalysis from './USMapAnalysis';
+
 import './DeploymentTracker.css';
 
 const Steps = [
     { key: 'submitted', label: 'Submission Received', description: 'Data received and queued', icon: Database },
     { key: 'npi_lookup', label: 'NPI Registry Check', description: 'Validating against NPI database', icon: Search },
-    { key: 'ai_validation', label: 'AI Validation', description: 'Gemini-powered data verification', icon: Sparkles },
     { key: 'enrichment', label: 'Data Enrichment', description: 'Enhancing with external sources', icon: Globe },
-    { key: 'final_review', label: 'Final Review', description: 'Quality assurance and approval', icon: ShieldCheck, alwaysGreen: true },
+    { key: 'email', label: 'Email Verification', description: 'Sending verification link', icon: Mail },
+    { key: 'call', label: 'Call Verification', description: 'Calling for verbal confirmation', icon: Phone },
+    { key: 'final_review', label: 'Final Review', description: 'Quality assurance and approval', icon: ShieldCheck },
 ];
 
-const ProcessTracker = ({ submissionId, onComplete, demoMode = true }) => {
+const ProcessTracker = ({ submissionId, onComplete, demoMode = false }) => {
     const [status, setStatus] = useState(null);
     const [polling, setPolling] = useState(true);
     const [completedSteps, setCompletedSteps] = useState([]);
@@ -45,11 +48,11 @@ const ProcessTracker = ({ submissionId, onComplete, demoMode = true }) => {
                 }
 
                 // Check if processing is complete
-                const terminalStatuses = ['processed', 'enriched', 'failed', 'failed_validation', 'rejected_invalid_npi'];
+                const terminalStatuses = ['pipeline_complete', 'processed', 'enriched', 'failed', 'failed_validation', 'rejected_invalid_npi'];
                 if (terminalStatuses.includes(data.processing_status)) {
                     setPolling(false);
                     clearInterval(poll);
-                    if (onComplete && (data.processing_status === 'processed' || data.processing_status === 'enriched')) {
+                    if (onComplete && (data.processing_status === 'pipeline_complete' || data.processing_status === 'processed' || data.processing_status === 'enriched')) {
                         setTimeout(() => onComplete(data), 1500);
                     }
                 }
@@ -220,9 +223,37 @@ const ProcessTracker = ({ submissionId, onComplete, demoMode = true }) => {
                 </div>
             </motion.div>
 
+            {/* Live Crawler Logs */}
+            <AnimatePresence>
+                {status.error_message && status.error_message.startsWith('INFO:') && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        style={{
+                            marginTop: '1.5rem',
+                            padding: '1rem',
+                            backgroundColor: '#0a0a0a',
+                            borderRadius: '8px',
+                            border: '1px solid #1f2937',
+                            fontFamily: 'monospace',
+                            fontSize: '0.85rem',
+                            color: '#10b981',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.75rem',
+                            overflow: 'hidden'
+                        }}
+                    >
+                        <Loader2 size={16} className="animate-spin" />
+                        <span>{status.error_message.replace('INFO: ', '> ')}</span>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
             {/* Error Banner */}
             <AnimatePresence>
-                {status.error_message && (
+                {status.error_message && !status.error_message.startsWith('INFO:') && (
                     <motion.div
                         className="error-banner"
                         initial={{ opacity: 0, y: 10 }}
@@ -315,8 +346,6 @@ const ProcessTracker = ({ submissionId, onComplete, demoMode = true }) => {
                 )}
             </AnimatePresence>
 
-            {/* US Map Analysis Section */}
-            <USMapAnalysis />
         </motion.div>
     );
 };
