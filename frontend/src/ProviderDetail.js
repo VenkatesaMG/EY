@@ -422,8 +422,8 @@ const ProviderDetail = ({ providerId, onBack }) => {
         return groups;
     };
 
-    const ValidationField = ({ icon: Icon, label, value, status, confidence }) => (
-        <div className="detail-row">
+    const ValidationField = ({ icon: Icon, label, value, status, confidence, sourceUrl }) => (
+        <div className="detail-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', minWidth: '160px' }}>
                 <div style={{
                     width: '32px',
@@ -439,18 +439,45 @@ const ProviderDetail = ({ providerId, onBack }) => {
                 </div>
                 <span className="field-label" style={{ width: 'auto' }}>{label}</span>
             </div>
-            <span className="field-value">{value || 'N/A'}</span>
-            {status && (
-                <div className={`status-tag ${getStatusClass(status)}`} style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.375rem'
-                }}>
-                    {getStatusIcon(status)}
-                    {status}
-                    {confidence && <span style={{ opacity: 0.8 }}>({Math.round(confidence)}%)</span>}
-                </div>
-            )}
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: '1rem', overflow: 'hidden' }}>
+                <span className="field-value">{value || 'N/A'}</span>
+                {status && (
+                    <div className={`status-tag ${getStatusClass(status)}`} style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.375rem',
+                        flexShrink: 0
+                    }}>
+                        {getStatusIcon(status)}
+                        {status}
+                        {confidence && <span style={{ opacity: 0.8 }}>({Math.round(confidence)}%)</span>}
+                    </div>
+                )}
+                {typeof sourceUrl === 'string' && value && value !== 'N/A' && (
+                    <a
+                        href={sourceUrl.startsWith('http') ? sourceUrl : `https://${sourceUrl}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        style={{
+                            color: 'hsl(160, 84%, 39%)',
+                            background: 'hsla(160, 84%, 39%, 0.1)',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            textDecoration: 'none',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.3rem',
+                            fontSize: '0.7rem',
+                            marginLeft: 'auto',
+                            flexShrink: 0
+                        }}
+                        title="Source of this information"
+                    >
+                        <Globe size={10} />
+                        Source
+                    </a>
+                )}
+            </div>
         </div>
     );
 
@@ -977,6 +1004,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                         value={provider.npi}
                                         status={provider.npi_status}
                                         confidence={provider.npi_confidence}
+                                        sourceUrl={provider.field_metadata?.npi}
                                     />
                                     <ValidationField
                                         icon={User}
@@ -984,6 +1012,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                         value={provider.display_name}
                                         status={provider.name_status}
                                         confidence={provider.name_confidence}
+                                        sourceUrl={provider.field_metadata?.display_name || provider.field_metadata?.first_name}
                                     />
                                     <ValidationField
                                         icon={Building2}
@@ -991,6 +1020,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                         value={provider.practice_name}
                                         status={provider.practice_status}
                                         confidence={provider.practice_confidence}
+                                        sourceUrl={provider.field_metadata?.practice_name}
                                     />
                                     <ValidationField
                                         icon={MapPin}
@@ -998,6 +1028,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                         value={[provider.address_line1, provider.city, provider.state].filter(Boolean).join(', ') || null}
                                         status={provider.address_status}
                                         confidence={provider.address_confidence}
+                                        sourceUrl={provider.field_metadata?.address_line1 || provider.field_metadata?.city}
                                     />
                                     <ValidationField
                                         icon={Stethoscope}
@@ -1005,11 +1036,13 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                         value={provider.taxonomy_code}
                                         status={provider.taxonomy_status}
                                         confidence={provider.taxonomy_confidence}
+                                        sourceUrl={provider.field_metadata?.taxonomy_code}
                                     />
                                     <ValidationField
                                         icon={Stethoscope}
                                         label="Specialties"
                                         value={Array.isArray(provider.specialties) ? provider.specialties.join(', ') : provider.specialties}
+                                        sourceUrl={provider.field_metadata?.specialties}
                                     />
                                     <ValidationField
                                         icon={FileCheck}
@@ -1017,6 +1050,7 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                         value={provider.license_number}
                                         status={provider.license_status}
                                         confidence={provider.license_confidence}
+                                        sourceUrl={provider.field_metadata?.license_number}
                                     />
                                 </div>
                             </div>

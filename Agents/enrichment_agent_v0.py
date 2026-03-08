@@ -236,6 +236,8 @@ class EnrichmentManager:
            - 'overall_confidence': Rate from 0.0 to 1.0 based on how much data you found on the page.
         4. **Null Handling**:
            - If a field is not found in the text, return null (do not hallucinate).
+        5. **Strict Source Attribution**:
+           - You MUST provide the `SOURCE_URL` in the `sources` dictionary for EVERY SINGLE FIELD you extract that is not null. If you found a practice_name, put its SOURCE_URL in `sources["practice_name"]`. Do this for all fields.
 
         ### REQUIRED JSON OUTPUT FORMAT:
         {
@@ -256,9 +258,21 @@ class EnrichmentManager:
             "languages": ["Language 1", "Language 2"],
             "overall_confidence": 0.0 to 1.0,
             "sources": {
-                "phone": "https://SOURCE_URL...",
-                "address_line1": "https://SOURCE_URL...",
-                "specialties": "https://..."
+                "display_name": "https://...",
+                "npi": "https://...",
+                "taxonomy_code": "https://...",
+                "specialties": "https://...",
+                "phone": "https://...",
+                "email": "https://...",
+                "website": "https://...",
+                "practice_name": "https://...",
+                "address_line1": "https://...",
+                "city": "https://...",
+                "state": "https://...",
+                "postal_code": "https://...",
+                "accepting_new_patients": "https://...",
+                "telehealth": "https://...",
+                "languages": "https://..."
             }
         }
         """

@@ -12,6 +12,7 @@ import logging
 from fastapi import Depends
 from database import get_db, AsyncSessionLocal
 import asyncio
+import urllib.parse
 
 # Setup logger
 logger = logging.getLogger("HealthValidator")
@@ -669,7 +670,11 @@ class EnrichmentService:
                             
                             # Save domain as website if no website found earlier
                             if not provider_prof.website:
-                                provider_prof.website = f"https://{domain}"
+                                update_and_log_if_significant(
+                                    db, npi, provider_prof, 'website', f"https://{domain}", 
+                                    'hunter_io', 'professional', 
+                                    source_url=f"https://duckduckgo.com/?q={urllib.parse.quote(org_name + ' official website')}"
+                                )
                                 logger.info(f"🌐 Updated website: https://{domain}")
                             
                             # Call Hunter.io to find the email
@@ -682,8 +687,11 @@ class EnrichmentService:
                             )
                             
                             if hunter_result and hunter_result.get("email"):
-                                log_field_change(db, npi, 'email', provider.email, hunter_result['email'], 'hunter_io', 'personal')
-                                provider.email = hunter_result["email"]
+                                update_and_log_if_significant(
+                                    db, npi, provider, 'email', hunter_result['email'], 
+                                    'hunter_io', 'personal', 
+                                    source_url=hunter_result.get('source_url') or f"https://hunter.io/search/{domain}"
+                                )
                                 logger.info(f"✅ Email found via Hunter.io: {hunter_result['email']} (confidence: {hunter_result.get('confidence')})")
                             else:
                                 logger.info(f"⚠️ Hunter.io could not find email for {provider.first_name} {provider.last_name} @ {domain}")
