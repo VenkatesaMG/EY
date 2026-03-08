@@ -122,7 +122,10 @@ function App() {
               variants={pageVariants}
               transition={pageTransition}
             >
-              <OnboardingForm onBatchUploadSuccess={() => handleNavClick('dashboard')} />
+              <OnboardingForm
+                onBatchUploadSuccess={() => handleNavClick('dashboard')}
+                onSingleUploadSuccess={(id) => handleSelectProvider(id)}
+              />
             </motion.div>
           )}
 

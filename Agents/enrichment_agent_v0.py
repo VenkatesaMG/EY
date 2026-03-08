@@ -14,6 +14,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
+from selenium.common.exceptions import WebDriverException, TimeoutException
 from webdriver_manager.chrome import ChromeDriverManager
 
 load_dotenv()
@@ -24,27 +25,46 @@ load_dotenv()
 
 def create_driver():
     options = Options()
-    options.add_argument("--headless")
+    options.add_argument("--headless=new") # Use newer headless mode
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
+    options.add_argument("--window-size=1920,1080")
     options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    
+    # Add timeouts to prevent hanging
+    options.page_load_strategy = 'normal'
+    
     service = Service(ChromeDriverManager().install())
-    return webdriver.Chrome(service=service, options=options)
+    driver = webdriver.Chrome(service=service, options=options)
+    driver.set_page_load_timeout(30)
+    driver.set_script_timeout(30)
+    return driver
+
+def is_driver_alive(driver):
+    if not driver:
+        return False
+    try:
+        # Simple light-weight check
+        driver.title
+        return True
+    except:
+        return False
 
 def search_web_with_driver(driver, query: str):
     urls = []
     try:
         print(f"DEBUG: Searching DuckDuckGo for '{query}'...")
         driver.get(f"https://html.duckduckgo.com/html/?q={query}")
-        time.sleep(2)
+        time.sleep(1.5)
         elements = driver.find_elements(By.CSS_SELECTOR, ".result")
         for el in elements[:3]: 
             try:
                 link_el = el.find_element(By.CSS_SELECTOR, "a.result__a")
                 url = link_el.get_attribute("href")
-                # Unwrap DuckDuckGo redirect URLs (can be nested)
+                # Unwrap DuckDuckGo redirect URLs
                 for _ in range(3):
+                    if not url: break
                     parsed_check = urlparse(url)
                     if "duckduckgo.com" in parsed_check.netloc:
                         qs = parse_qs(parsed_check.query)
@@ -54,12 +74,16 @@ def search_web_with_driver(driver, query: str):
                             break
                     else:
                         break
+                if not url: continue
                 # Skip ad/tracker URLs
                 parsed_final = urlparse(url)
                 if any(ad in parsed_final.netloc.lower() for ad in ['duckduckgo.com', 'bing.com/aclick']):
                     continue
                 urls.append(url)
             except: continue
+    except (WebDriverException, TimeoutException) as e:
+        print(f"Search Driver Error: {e}")
+        raise # Re-raise so manager can recreate driver
     except Exception as e:
         print(f"Search Error: {e}")
     return urls
@@ -72,6 +96,9 @@ def scrape_webpage_with_driver(driver, url: str):
         body = driver.find_element(By.TAG_NAME, "body").text
         clean_body = " ".join(body.split())
         return clean_body[:3000] 
+    except (WebDriverException, TimeoutException) as e:
+        print(f"Scrape Driver Error: {e}")
+        raise # Re-raise
     except Exception as e:
         print(f"Scrape Error: {e}")
         return ""
@@ -302,30 +329,55 @@ class EnrichmentManager:
         
         try:
             update_status("Initializing headless crawler...")
-            # 2. GATHER DATA with FRESH DRIVER
+            # 2. GATHER DATA with RESILIENT DRIVER
             driver = create_driver()
             
             seen_urls = set()
             for q in queries:
-                if not driver: break 
+                # Ensure driver is healthy
+                if not is_driver_alive(driver):
+                    if driver: 
+                        try: driver.quit()
+                        except: pass
+                    driver = create_driver()
                 
-                update_status(f"Searching web for: {q}")
-                urls = search_web_with_driver(driver, q)
-                # We only take the top 1-2 results per query to keep the prompt clean for 8B
-                for url in urls[:2]: 
-                    if url in seen_urls: continue
-                    seen_urls.add(url)
+                try:
+                    update_status(f"Searching web for: {q}")
+                    urls = search_web_with_driver(driver, q)
                     
-                    try:
-                        domain = urlparse(url).netloc
-                    except:
-                        domain = url
+                    # We only take the top 1-2 results per query
+                    for url in urls[:2]: 
+                        if url in seen_urls: continue
+                        seen_urls.add(url)
                         
-                    update_status(f"Scraping {domain}...")
-                    content = scrape_webpage_with_driver(driver, url)
-                    if content:
-                        # We inject the Source URL so the LLM can fill the 'website' field
-                        collected_context.append(f"SOURCE_URL: {url}\nPAGE_CONTENT: {content}\n---")
+                        try:
+                            domain = urlparse(url).netloc
+                        except:
+                            domain = url
+                            
+                        # Ensure driver is STILL healthy before scraping
+                        if not is_driver_alive(driver):
+                            try: driver.quit()
+                            except: pass
+                            driver = create_driver()
+
+                        update_status(f"Scraping {domain}...")
+                        try:
+                            content = scrape_webpage_with_driver(driver, url)
+                            if content:
+                                collected_context.append(f"SOURCE_URL: {url}\nPAGE_CONTENT: {content}\n---")
+                        except (WebDriverException, TimeoutException):
+                            print(f"⚠️ Scraping failed for {url}, driver may have crashed. Continuing...")
+                        except Exception as scrape_e:
+                            print(f"Non-driver scrape error: {scrape_e}")
+
+                except (WebDriverException, TimeoutException) as e:
+                    print(f"⚠️ Search failed for '{q}' due to driver issue: {e}. Re-initializing...")
+                    # Loop will re-check is_driver_alive next iteration
+                except Exception as e:
+                    print(f"Non-driver search error: {e}")
+                        
+            update_status("Running LLM extraction on scraped data...")
                         
             update_status("Running LLM extraction on scraped data...")
         except Exception as e:

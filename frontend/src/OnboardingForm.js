@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Upload, FileText, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import './App.css';
 
-const OnboardingForm = ({ onBatchUploadSuccess }) => {
+const OnboardingForm = ({ onBatchUploadSuccess, onSingleUploadSuccess }) => {
     const [mode, setMode] = useState('single');
     const [loading, setLoading] = useState(false);
     const [message, setMessage] = useState({ text: '', type: '' });
@@ -164,10 +164,16 @@ const OnboardingForm = ({ onBatchUploadSuccess }) => {
                 <ProcessTracker
                     submissionId={submissionId}
                     onComplete={(finalData) => {
+                        const providerId = finalData.provider?.npi || finalData.npi;
                         setMessage({
-                            text: `Process Complete! Provider status: ${finalData.provider?.status || 'processed'}`,
+                            text: `Process Complete! Redirecting to profile...`,
                             type: 'success'
                         });
+                        if (onSingleUploadSuccess && providerId) {
+                            setTimeout(() => {
+                                onSingleUploadSuccess(providerId);
+                            }, 1500);
+                        }
                     }}
                 />
                 <div style={{ textAlign: 'center', marginTop: '2rem' }}>
