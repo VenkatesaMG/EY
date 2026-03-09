@@ -364,7 +364,7 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                 justifyContent: 'space-between',
                 gap: '2.5rem',
                 background: 'linear-gradient(90deg, hsla(217, 91%, 60%, 0.05) 0%, transparent 100%)',
-                overflowX: 'auto'
+                overflow: 'visible'
             }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', minWidth: '220px' }}>
                     <h2 style={{

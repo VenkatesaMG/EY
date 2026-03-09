@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Sparkles, MapPin, Maximize, Minimize, Send, MessageSquare, RotateCcw, Bot, User } from 'lucide-react';
+import { Loader2, Sparkles, MapPin, Maximize, Minimize, Send, MessageSquare, RotateCcw, Bot, User, X } from 'lucide-react';
 import {
     ComposableMap,
     Geographies,
@@ -256,19 +256,14 @@ const USMapAnalysis = () => {
         }
     }, [mapRef]);
 
-    // Open chat panel with automatic first analysis
+    // Open chat panel without automatic first analysis
     const handleOpenChat = async () => {
         const willShow = !showChatPanel;
         setShowChatPanel(willShow);
 
         if (willShow && chatMessages.length === 0) {
-            // Fetch context and send initial analysis
-            const ctx = await fetchContextData();
-            if (ctx) {
-                const initialMsg = { role: 'user', content: 'Give me a comprehensive overview and key insights about the current provider data.' };
-                setChatMessages([initialMsg]);
-                await sendMessage([initialMsg], ctx);
-            }
+            // Just fetch context data for chat panel initial state
+            await fetchContextData();
         }
     };
 
@@ -490,9 +485,10 @@ const USMapAnalysis = () => {
                         className="map-container"
                         onMouseMove={handleMouseMove}
                         style={{
-                            height: isFullscreen ? '100%' : showChatPanel ? '450px' : '480px',
-                            minHeight: isFullscreen ? '0' : showChatPanel ? '400px' : '480px',
-                            transition: 'all 0.3s ease'
+                            height: isFullscreen ? '100%' : showChatPanel ? '450px' : '550px',
+                            minHeight: isFullscreen ? '0' : showChatPanel ? '400px' : '550px',
+                            transition: 'all 0.3s ease',
+                            width: '100%'
                         }}
                     >
                         {/* Control Buttons Overlay */}
@@ -532,7 +528,7 @@ const USMapAnalysis = () => {
                             left: '1rem',
                             margin: 0,
                             padding: '0.75rem 1rem',
-                            display: isFullscreen ? 'none' : 'flex',
+                            display: (isFullscreen || showChatPanel) ? 'none' : 'flex',
                             zIndex: 40,
                             background: 'hsla(228, 15%, 9%, 0.8)',
                             backdropFilter: 'blur(4px)',
@@ -661,33 +657,43 @@ const USMapAnalysis = () => {
                                 </motion.div>
                             )}
                         </AnimatePresence>
-                    </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: '1rem' }}>
-                        <div className="analyze-section">
-                            <button
-                                className="analyze-button"
-                                onClick={handleOpenChat}
-                                disabled={isSending && !showChatPanel}
-                                style={{
-                                    background: showChatPanel ? 'hsl(228, 12%, 18%)' : 'linear-gradient(135deg, hsl(var(--primary)), #8b5cf6)',
-                                    color: showChatPanel ? 'hsl(var(--foreground))' : 'white',
-                                    border: showChatPanel ? '1px solid hsl(var(--border))' : 'none'
-                                }}
-                            >
-                                {isLoadingContext && !showChatPanel ? (
-                                    <>
-                                        <Loader2 size={18} className="spinning" />
-                                        Loading...
-                                    </>
-                                ) : (
-                                    <>
-                                        <MessageSquare size={18} />
-                                        {showChatPanel ? 'Close Chat' : 'AI Analysis Chat'}
-                                    </>
-                                )}
-                            </button>
-                        </div>
+                        {/* AI Analysis Chat Button (Inside Map) */}
+                        {!showChatPanel && (
+                            <div style={{
+                                position: 'absolute',
+                                bottom: '1.5rem',
+                                right: '1.5rem',
+                                zIndex: 50
+                            }}>
+                                <button
+                                    className="analyze-button"
+                                    onClick={handleOpenChat}
+                                    disabled={isSending}
+                                    style={{
+                                        background: 'hsl(217, 91%, 60%)',
+                                        color: 'white',
+                                        border: 'none',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+                                        padding: '0.6rem 1.25rem',
+                                        borderRadius: '8px',
+                                        fontSize: '0.875rem'
+                                    }}
+                                >
+                                    {isLoadingContext ? (
+                                        <>
+                                            <Loader2 size={18} className="spinning" />
+                                            Loading...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <MessageSquare size={18} />
+                                            AI Analysis Chat
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
 
@@ -715,13 +721,22 @@ const USMapAnalysis = () => {
                                         </span>
                                     </div>
                                 </div>
-                                <button
-                                    className="chat-reset-btn"
-                                    onClick={handleResetChat}
-                                    title="New conversation"
-                                >
-                                    <RotateCcw size={16} />
-                                </button>
+                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                    <button
+                                        className="chat-reset-btn"
+                                        onClick={handleResetChat}
+                                        title="New conversation"
+                                    >
+                                        <RotateCcw size={16} />
+                                    </button>
+                                    <button
+                                        className="chat-reset-btn"
+                                        onClick={handleOpenChat}
+                                        title="Close Chat"
+                                    >
+                                        <X size={16} />
+                                    </button>
+                                </div>
                             </div>
 
                             {/* Chat Messages */}

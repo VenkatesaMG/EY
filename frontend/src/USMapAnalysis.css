@@ -46,13 +46,15 @@
     overflow: hidden;
 }
 
-.map-container svg {
+.map-container .rsm-svg,
+.map-container>svg:first-of-type {
     width: 100%;
     height: 100%;
     max-width: 100%;
 }
 
-.map-container svg g {
+.map-container .rsm-svg g,
+.map-container>svg:first-of-type g {
     transform-origin: center;
 }
 
