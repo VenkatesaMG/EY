@@ -95,6 +95,10 @@ const USMapAnalysis = () => {
     // Real Data State
     const [stateStats, setStateStats] = useState({});
 
+    // Dropdown State
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const dropdownRef = useRef(null);
+
     // Chat State
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState("");
@@ -111,6 +115,17 @@ const USMapAnalysis = () => {
             chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
         }
     }, [chatMessages]);
+
+    // Close Dropdown on outside click
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     // Fetch Specialties
     useEffect(() => {
@@ -369,28 +384,93 @@ const USMapAnalysis = () => {
                         </p>
                     </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', position: 'relative' }} ref={dropdownRef}>
                         <label style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 500 }}>Filter by Department/Specialty</label>
-                        <select
-                            value={selectedSpecialty}
-                            onChange={(e) => setSelectedSpecialty(e.target.value)}
+                        <div
+                            onClick={() => setIsDropdownOpen(!isDropdownOpen)}
                             style={{
                                 background: 'hsl(228, 12%, 18%)',
-                                border: '1px solid hsl(228, 12%, 25%)',
+                                border: isDropdownOpen ? '1px solid hsl(217, 91%, 60%)' : '1px solid hsl(228, 12%, 25%)',
                                 color: 'white',
                                 padding: '0.5rem 0.75rem',
                                 borderRadius: '6px',
                                 fontSize: '0.875rem',
-                                minWidth: '200px',
+                                minWidth: '220px',
                                 cursor: 'pointer',
-                                outline: 'none'
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'center',
+                                transition: 'all 0.2s ease',
+                                boxShadow: isDropdownOpen ? '0 0 0 2px hsla(217, 91%, 60%, 0.2)' : 'none'
                             }}
                         >
-                            <option value="">All Specialties</option>
-                            {specialties.map(s => (
-                                <option key={s} value={s}>{s}</option>
-                            ))}
-                        </select>
+                            <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '180px' }}>
+                                {selectedSpecialty || "All Specialties"}
+                            </span>
+                            <motion.div animate={{ rotate: isDropdownOpen ? 180 : 0 }}>
+                                <svg width="12" height="12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </motion.div>
+                        </div>
+
+                        <AnimatePresence>
+                            {isDropdownOpen && (
+                                <motion.div
+                                    initial={{ opacity: 0, y: -5 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: -5 }}
+                                    transition={{ duration: 0.15 }}
+                                    style={{
+                                        position: 'absolute',
+                                        top: 'calc(100% + 4px)',
+                                        left: 0,
+                                        width: '100%',
+                                        background: 'hsl(228, 12%, 18%)',
+                                        border: '1px solid hsl(228, 12%, 25%)',
+                                        borderRadius: '6px',
+                                        zIndex: 100,
+                                        maxHeight: '300px',
+                                        overflowY: 'auto',
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                    }}
+                                >
+                                    <div
+                                        className="dropdown-item"
+                                        onClick={() => { setSelectedSpecialty(""); setIsDropdownOpen(false); }}
+                                        style={{
+                                            padding: '0.5rem 0.75rem',
+                                            cursor: 'pointer',
+                                            fontSize: '0.875rem',
+                                            color: selectedSpecialty === "" ? 'white' : 'hsl(228, 8%, 70%)',
+                                            background: selectedSpecialty === "" ? 'hsl(217, 91%, 60%)' : 'transparent',
+                                        }}
+                                        onMouseEnter={(e) => { if (selectedSpecialty !== "") e.target.style.background = 'hsla(228, 12%, 25%, 1)'; }}
+                                        onMouseLeave={(e) => { if (selectedSpecialty !== "") e.target.style.background = 'transparent'; }}
+                                    >
+                                        All Specialties
+                                    </div>
+                                    {specialties.map(s => (
+                                        <div
+                                            key={s}
+                                            className="dropdown-item"
+                                            onClick={() => { setSelectedSpecialty(s); setIsDropdownOpen(false); }}
+                                            style={{
+                                                padding: '0.5rem 0.75rem',
+                                                cursor: 'pointer',
+                                                fontSize: '0.875rem',
+                                                color: selectedSpecialty === s ? 'white' : 'hsl(228, 8%, 70%)',
+                                                background: selectedSpecialty === s ? 'hsl(217, 91%, 60%)' : 'transparent',
+                                            }}
+                                            onMouseEnter={(e) => { if (selectedSpecialty !== s) e.target.style.background = 'hsla(228, 12%, 25%, 1)'; }}
+                                            onMouseLeave={(e) => { if (selectedSpecialty !== s) e.target.style.background = 'transparent'; }}
+                                        >
+                                            {s}
+                                        </div>
+                                    ))}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
                     </div>
                 </div>
             </div>
@@ -410,8 +490,8 @@ const USMapAnalysis = () => {
                         className="map-container"
                         onMouseMove={handleMouseMove}
                         style={{
-                            height: isFullscreen ? '100%' : showChatPanel ? '450px' : '550px',
-                            minHeight: isFullscreen ? '0' : showChatPanel ? '400px' : '550px',
+                            height: isFullscreen ? '100%' : showChatPanel ? '450px' : '480px',
+                            minHeight: isFullscreen ? '0' : showChatPanel ? '400px' : '480px',
                             transition: 'all 0.3s ease'
                         }}
                     >
@@ -443,6 +523,29 @@ const USMapAnalysis = () => {
                             >
                                 {isFullscreen ? <Minimize size={20} /> : <Maximize size={20} />}
                             </button>
+                        </div>
+
+                        {/* Moved Legend to Top Left */}
+                        <div className="map-legend" style={{
+                            position: 'absolute',
+                            top: '1rem',
+                            left: '1rem',
+                            margin: 0,
+                            padding: '0.75rem 1rem',
+                            display: isFullscreen ? 'none' : 'flex',
+                            zIndex: 40,
+                            background: 'hsla(228, 15%, 9%, 0.8)',
+                            backdropFilter: 'blur(4px)',
+                            border: '1px solid hsl(228, 12%, 25%)',
+                            borderRadius: '8px',
+                            boxShadow: '0 4px 12px rgba(0,0,0,0.3)'
+                        }}>
+                            <div className="legend-label" style={{ marginBottom: '0.5rem', fontWeight: 600, color: 'hsl(var(--foreground))' }}>Submission Intensity</div>
+                            <div className="legend-gradient">
+                                <div className="legend-item"><div className="legend-color" style={{ background: "#dbeafe" }}></div><span>Low</span></div>
+                                <div className="legend-item"><div className="legend-color" style={{ background: "#93c5fd" }}></div><span>Medium</span></div>
+                                <div className="legend-item"><div className="legend-color" style={{ background: "#1d4ed8" }}></div><span>High</span></div>
+                            </div>
                         </div>
 
                         <ComposableMap
@@ -560,17 +663,8 @@ const USMapAnalysis = () => {
                         </AnimatePresence>
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '1rem' }}>
-                        <div className="map-legend" style={{ margin: 0, padding: '0.75rem 1rem', display: isFullscreen ? 'none' : 'flex' }}>
-                            <div className="legend-label" style={{ marginBottom: '0.5rem' }}>Submission Intensity</div>
-                            <div className="legend-gradient">
-                                <div className="legend-item"><div className="legend-color" style={{ background: "#dbeafe" }}></div><span>Low</span></div>
-                                <div className="legend-item"><div className="legend-color" style={{ background: "#93c5fd" }}></div><span>Medium</span></div>
-                                <div className="legend-item"><div className="legend-color" style={{ background: "#1d4ed8" }}></div><span>High</span></div>
-                            </div>
-                        </div>
-
-                        <div className="analyze-section" style={{ marginLeft: 'auto' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginTop: '1rem' }}>
+                        <div className="analyze-section">
                             <button
                                 className="analyze-button"
                                 onClick={handleOpenChat}

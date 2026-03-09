@@ -173,8 +173,24 @@ const ProviderDetail = ({ providerId, onBack }) => {
                     <button
                         onClick={submitManualReview}
                         disabled={submittingReview}
-                        className="action-button primary"
-                        style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}
+                        className="submit-btn"
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.6rem 1.25rem',
+                            borderRadius: '12px',
+                            background: 'linear-gradient(135deg, hsl(217, 91%, 60%), #8b5cf6)',
+                            color: 'white',
+                            fontWeight: 600,
+                            fontSize: '0.875rem',
+                            border: 'none',
+                            boxShadow: '0 4px 12px hsla(217, 91%, 60%, 0.3)',
+                            cursor: submittingReview ? 'not-allowed' : 'pointer',
+                            opacity: submittingReview ? 0.7 : 1,
+                            transition: 'all 0.2s',
+                            width: 'auto'
+                        }}
                     >
                         {submittingReview ? <Loader2 size={16} className="spin" /> : <Save size={16} />}
                         Save Golden Record
@@ -203,7 +219,13 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                     {sourcesData['npi_lookup'] && (
                                         <div
                                             onClick={() => handleSelectValue(field, 'npi_lookup', sourcesData['npi_lookup'])}
-                                            className={`review-selection-card ${selectedValues[field]?.source === 'npi_lookup' ? 'selected' : ''}`}
+                                            className="review-selection-card"
+                                            style={{
+                                                borderColor: selectedValues[field]?.source === 'npi_lookup' ? 'hsl(217, 91%, 60%)' : 'hsla(217, 91%, 60%, 0.3)',
+                                                background: selectedValues[field]?.source === 'npi_lookup' ? 'hsla(217, 91%, 60%, 0.15)' : 'transparent',
+                                                color: selectedValues[field]?.source === 'npi_lookup' ? 'hsl(217, 91%, 60%)' : 'hsl(228, 8%, 70%)',
+                                                boxShadow: selectedValues[field]?.source === 'npi_lookup' ? 'inset 4px 0 0 0 hsl(217, 91%, 60%)' : 'none'
+                                            }}
                                         >
                                             {sourcesData['npi_lookup']}
                                         </div>
@@ -215,7 +237,13 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                     {sourcesData['enrichment'] && (
                                         <div
                                             onClick={() => handleSelectValue(field, 'enrichment', sourcesData['enrichment'])}
-                                            className={`review-selection-card ${selectedValues[field]?.source === 'enrichment' ? 'selected' : ''}`}
+                                            className="review-selection-card"
+                                            style={{
+                                                borderColor: selectedValues[field]?.source === 'enrichment' ? 'hsl(280, 70%, 60%)' : 'hsla(280, 70%, 60%, 0.3)',
+                                                background: selectedValues[field]?.source === 'enrichment' ? 'hsla(280, 70%, 60%, 0.15)' : 'transparent',
+                                                color: selectedValues[field]?.source === 'enrichment' ? 'hsl(280, 70%, 60%)' : 'hsl(228, 8%, 70%)',
+                                                boxShadow: selectedValues[field]?.source === 'enrichment' ? 'inset 4px 0 0 0 hsl(280, 70%, 60%)' : 'none'
+                                            }}
                                         >
                                             {sourcesData['enrichment']}
                                         </div>
@@ -227,7 +255,13 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                     {(sourcesData['hunter_io'] || sourcesData['verification']) && (
                                         <div
                                             onClick={() => handleSelectValue(field, 'hunter', sourcesData['hunter_io'] || sourcesData['verification'])}
-                                            className={`review-selection-card ${selectedValues[field]?.source === 'hunter' ? 'selected' : ''}`}
+                                            className="review-selection-card"
+                                            style={{
+                                                borderColor: selectedValues[field]?.source === 'hunter' ? 'hsl(43, 96%, 56%)' : 'hsla(43, 96%, 56%, 0.3)',
+                                                background: selectedValues[field]?.source === 'hunter' ? 'hsla(43, 96%, 56%, 0.15)' : 'transparent',
+                                                color: selectedValues[field]?.source === 'hunter' ? 'hsl(43, 96%, 56%)' : 'hsl(228, 8%, 70%)',
+                                                boxShadow: selectedValues[field]?.source === 'hunter' ? 'inset 4px 0 0 0 hsl(43, 96%, 56%)' : 'none'
+                                            }}
                                         >
                                             {sourcesData['verification'] || sourcesData['hunter_io']}
                                         </div>
@@ -239,7 +273,13 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                     {sourcesData['phone_verification'] && (
                                         <div
                                             onClick={() => handleSelectValue(field, 'phone_verification', sourcesData['phone_verification'])}
-                                            className={`review-selection-card ${selectedValues[field]?.source === 'phone_verification' ? 'selected' : ''}`}
+                                            className="review-selection-card"
+                                            style={{
+                                                borderColor: selectedValues[field]?.source === 'phone_verification' ? 'hsl(160, 84%, 39%)' : 'hsla(160, 84%, 39%, 0.3)',
+                                                background: selectedValues[field]?.source === 'phone_verification' ? 'hsla(160, 84%, 39%, 0.15)' : 'transparent',
+                                                color: selectedValues[field]?.source === 'phone_verification' ? 'hsl(160, 84%, 39%)' : 'hsl(228, 8%, 70%)',
+                                                boxShadow: selectedValues[field]?.source === 'phone_verification' ? 'inset 4px 0 0 0 hsl(160, 84%, 39%)' : 'none'
+                                            }}
                                         >
                                             {sourcesData['phone_verification']}
                                         </div>
@@ -248,11 +288,26 @@ const ProviderDetail = ({ providerId, onBack }) => {
 
                                 {/* Custom Value */}
                                 <td>
-                                    <div className="review-custom-input-container">
+                                    <div
+                                        className="review-custom-input-container"
+                                        style={{
+                                            borderColor: selectedValues[field]?.source === 'custom' ? 'hsl(0, 0%, 60%)' : 'hsla(0, 0%, 60%, 0.3)',
+                                            background: selectedValues[field]?.source === 'custom' ? 'hsla(0, 0%, 60%, 0.15)' : 'transparent',
+                                            boxShadow: selectedValues[field]?.source === 'custom' ? 'inset 4px 0 0 0 hsl(0, 0%, 60%)' : 'none',
+                                            border: '1px solid',
+                                            padding: '0.625rem 0.75rem',
+                                            borderRadius: 'var(--radius-md)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '0.75rem',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
                                         <input
                                             type="radio"
                                             checked={selectedValues[field]?.source === 'custom'}
                                             onChange={() => handleSelectValue(field, 'custom', customValues[field] || provider[field] || '')}
+                                            style={{ accentColor: 'hsl(var(--foreground))', cursor: 'pointer', margin: 0 }}
                                         />
                                         <input
                                             type="text"
@@ -260,6 +315,14 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                             value={customValues[field] || ''}
                                             onChange={(e) => handleCustomValueChange(field, e.target.value)}
                                             onFocus={() => handleSelectValue(field, 'custom', customValues[field] || '')}
+                                            style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                color: 'hsl(var(--foreground))',
+                                                fontSize: '0.875rem',
+                                                width: '100%',
+                                                outline: 'none'
+                                            }}
                                         />
                                     </div>
                                 </td>
@@ -814,17 +877,25 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                     alert("Error: " + err.message);
                                 }
                             }}
-                            className="action-button primary"
+                            className="action-button"
                             style={{
-                                padding: '0.25rem 0.75rem',
+                                padding: '0.4rem 0.8rem',
+                                borderRadius: '6px',
+                                border: '1px solid hsl(43, 96%, 56%)',
+                                background: 'hsla(43, 96%, 56%, 0.1)',
+                                color: 'hsl(43, 96%, 56%)',
                                 fontSize: '0.75rem',
+                                fontWeight: 600,
                                 marginLeft: '0.5rem',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '0.25rem'
+                                gap: '0.375rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                boxShadow: '0 2px 4px hsla(43, 96%, 56%, 0.1)'
                             }}
                         >
-                            <Mail size={12} />
+                            <Mail size={14} color="hsl(43, 96%, 56%)" />
                             Verify via Email
                         </button>
                         <button
@@ -888,18 +959,25 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                     alert("Error: " + err.message);
                                 }
                             }}
-                            className="action-button primary"
+                            className="action-button"
                             style={{
-                                padding: '0.25rem 0.75rem',
+                                padding: '0.4rem 0.8rem',
+                                borderRadius: '6px',
+                                border: '1px solid hsl(160, 84%, 39%)',
+                                background: 'hsla(160, 84%, 39%, 0.1)',
+                                color: 'hsl(160, 84%, 39%)',
                                 fontSize: '0.75rem',
+                                fontWeight: 600,
                                 marginLeft: '0.5rem',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '0.25rem',
-                                background: 'hsl(160, 84%, 39%)', /* Green for call */
+                                gap: '0.375rem',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                boxShadow: '0 2px 4px hsla(160, 84%, 39%, 0.1)'
                             }}
                         >
-                            <Phone size={12} color="white" />
+                            <Phone size={14} color="hsl(160, 84%, 39%)" />
                             Verify via Phone
                         </button>
                         <button
@@ -931,20 +1009,26 @@ const ProviderDetail = ({ providerId, onBack }) => {
                                 }
                             }}
                             disabled={enriching}
-                            className="action-button primary"
+                            className="action-button"
                             style={{
-                                padding: '0.25rem 0.75rem',
+                                padding: '0.4rem 0.8rem',
+                                borderRadius: '6px',
+                                border: '1px solid hsl(217, 91%, 60%)',
+                                background: enriching ? 'hsla(217, 91%, 60%, 0.3)' : 'hsla(217, 91%, 60%, 0.1)',
+                                color: 'hsl(217, 91%, 60%)',
                                 fontSize: '0.75rem',
+                                fontWeight: 600,
                                 marginLeft: '0.5rem',
                                 display: 'flex',
                                 alignItems: 'center',
-                                gap: '0.25rem',
-                                background: enriching ? 'hsl(217, 60%, 40%)' : 'hsl(217, 91%, 60%)',
+                                gap: '0.375rem',
                                 cursor: enriching ? 'not-allowed' : 'pointer',
-                                opacity: enriching ? 0.8 : 1
+                                opacity: enriching ? 0.8 : 1,
+                                transition: 'all 0.2s',
+                                boxShadow: '0 2px 4px hsla(217, 91%, 60%, 0.1)'
                             }}
                         >
-                            {enriching ? <Loader2 size={12} className="spin" /> : <Globe size={12} />}
+                            {enriching ? <Loader2 size={14} className="spin" color="hsl(217, 91%, 60%)" /> : <Globe size={14} color="hsl(217, 91%, 60%)" />}
                             {enriching ? 'Enriching...' : 'Enrich Now'}
                         </button>
                     </div>

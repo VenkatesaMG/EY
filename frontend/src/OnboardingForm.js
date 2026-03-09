@@ -24,6 +24,7 @@ const OnboardingForm = ({ onBatchUploadSuccess, onSingleUploadSuccess }) => {
     });
 
     const [csvFile, setCsvFile] = useState(null);
+    const [batchMode, setBatchMode] = useState('manual');
 
     const handleInputChange = (e) => {
         setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -133,6 +134,7 @@ const OnboardingForm = ({ onBatchUploadSuccess, onSingleUploadSuccess }) => {
         setLoading(true);
         const uploadData = new FormData();
         uploadData.append('file', csvFile);
+        uploadData.append('mode', batchMode);
 
         try {
             const response = await fetch('http://localhost:8000/onboard/csv', {
@@ -444,7 +446,56 @@ const OnboardingForm = ({ onBatchUploadSuccess, onSingleUploadSuccess }) => {
             )}
 
             {mode === 'batch' && (
-                <div className="batch-mode">
+                <div className="batch-mode" style={{ position: 'relative', padding: '1.5rem' }}>
+                    <div style={{
+                        position: 'absolute',
+                        top: '1.5rem',
+                        right: '1.5rem',
+                        display: 'flex',
+                        background: 'hsl(228, 12%, 18%)',
+                        borderRadius: '20px',
+                        padding: '3px',
+                        gap: '2px',
+                        alignItems: 'center'
+                    }}>
+                        <button
+                            type="button"
+                            onClick={() => setBatchMode('manual')}
+                            style={{
+                                padding: '0.25rem 0.75rem',
+                                borderRadius: '18px',
+                                border: 'none',
+                                background: batchMode === 'manual' ? 'hsl(217, 91%, 60%)' : 'transparent',
+                                color: batchMode === 'manual' ? '#fff' : 'hsl(228, 8%, 55%)',
+                                fontSize: '0.75rem',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                            }}
+                            title="Manual Mode: Validates only. Requires manual enrichment."
+                        >
+                            Manual
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setBatchMode('auto')}
+                            style={{
+                                padding: '0.25rem 0.75rem',
+                                borderRadius: '18px',
+                                border: 'none',
+                                background: batchMode === 'auto' ? 'hsl(160, 84%, 39%)' : 'transparent',
+                                color: batchMode === 'auto' ? '#fff' : 'hsl(228, 8%, 55%)',
+                                fontSize: '0.75rem',
+                                fontWeight: '600',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                            }}
+                            title="Auto Mode: Full pipeline (Validate → Enrich → Mail → Call)"
+                        >
+                            Auto
+                        </button>
+                    </div>
+
                     <div style={{
                         width: '64px',
                         height: '64px',
@@ -458,9 +509,10 @@ const OnboardingForm = ({ onBatchUploadSuccess, onSingleUploadSuccess }) => {
                         <FileText size={28} color="hsl(160, 84%, 39%)" />
                     </div>
                     <h3 style={{ textAlign: 'center' }}>Upload CSV File</h3>
-                    <p style={{ textAlign: 'center' }}>
+                    <p style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
                         Process multiple providers at once. Required columns: npi, first_name, last_name, practice_name, address
                     </p>
+
                     <form onSubmit={handleBatchUpload}>
                         <div style={{
                             border: '2px dashed hsl(228, 12%, 18%)',

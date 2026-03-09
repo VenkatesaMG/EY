@@ -37,6 +37,18 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
     const [refreshing, setRefreshing] = useState(false);
     const [verifyingEmail, setVerifyingEmail] = useState(null);
     const [scheduleInterval, setScheduleInterval] = useState(0);
+    const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+    const dropdownRef = React.useRef(null);
+
+    React.useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsDropdownOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     const fetchProviders = async (isRefresh = false) => {
         if (isRefresh) setRefreshing(true);
@@ -412,26 +424,79 @@ const Dashboard = ({ onSelectProvider, onNavigateToAnalysis }) => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'hsla(var(--background-elevated), 0.8)', padding: '0.4rem 0.75rem', borderRadius: '20px', border: '1px solid hsl(var(--border))' }}>
                         <RefreshCw size={12} style={{ color: 'hsl(217, 91%, 60%)' }} />
                         <span style={{ fontSize: '0.75rem', color: 'hsl(var(--muted-foreground))', fontWeight: 600 }}>AUTO</span>
-                        <select
-                            value={scheduleInterval}
-                            onChange={handleScheduleChange}
-                            style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: 'hsl(var(--foreground))',
-                                fontSize: '0.75rem',
-                                fontWeight: 700,
-                                outline: 'none',
-                                cursor: 'pointer',
-                                padding: 0
-                            }}
-                        >
-                            <option value={0}>OFF</option>
-                            <option value={5}>5m</option>
-                            <option value={15}>15m</option>
-                            <option value={60}>1h</option>
-                            <option value={1440}>24h</option>
-                        </select>
+                        <div style={{ position: 'relative' }} ref={dropdownRef}>
+                            <div
+                                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'hsl(var(--foreground))',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 700,
+                                    outline: 'none',
+                                    cursor: 'pointer',
+                                    padding: 0,
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '4px'
+                                }}
+                            >
+                                {scheduleInterval === 0 ? "OFF" : scheduleInterval === 5 ? "5m" : scheduleInterval === 15 ? "15m" : scheduleInterval === 60 ? "1h" : "24h"}
+                                <motion.div animate={{ rotate: isDropdownOpen ? 180 : 0 }}>
+                                    <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                    </svg>
+                                </motion.div>
+                            </div>
+
+                            <AnimatePresence>
+                                {isDropdownOpen && (
+                                    <motion.div
+                                        initial={{ opacity: 0, y: -5 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        exit={{ opacity: 0, y: -5 }}
+                                        transition={{ duration: 0.15 }}
+                                        style={{
+                                            position: 'absolute',
+                                            top: '100%',
+                                            right: 0,
+                                            marginTop: '6px',
+                                            background: 'hsl(228, 12%, 18%)',
+                                            border: '1px solid hsl(228, 12%, 25%)',
+                                            borderRadius: '6px',
+                                            zIndex: 100,
+                                            boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                            minWidth: '70px'
+                                        }}
+                                    >
+                                        {[
+                                            { value: 0, label: "OFF" },
+                                            { value: 5, label: "5m" },
+                                            { value: 15, label: "15m" },
+                                            { value: 60, label: "1h" },
+                                            { value: 1440, label: "24h" }
+                                        ].map(option => (
+                                            <div
+                                                key={option.value}
+                                                onClick={() => { handleScheduleChange({ target: { value: option.value } }); setIsDropdownOpen(false); }}
+                                                style={{
+                                                    padding: '0.4rem 0.75rem',
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.75rem',
+                                                    fontWeight: 600,
+                                                    color: scheduleInterval === option.value ? 'white' : 'hsl(228, 8%, 70%)',
+                                                    background: scheduleInterval === option.value ? 'hsl(217, 91%, 60%)' : 'transparent',
+                                                }}
+                                                onMouseEnter={(e) => { if (scheduleInterval !== option.value) e.target.style.background = 'hsla(228, 12%, 25%, 1)'; }}
+                                                onMouseLeave={(e) => { if (scheduleInterval !== option.value) e.target.style.background = 'transparent'; }}
+                                            >
+                                                {option.label}
+                                            </div>
+                                        ))}
+                                    </motion.div>
+                                )}
+                            </AnimatePresence>
+                        </div>
                     </div>
 
                     <motion.button

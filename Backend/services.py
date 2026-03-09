@@ -758,3 +758,100 @@ class SubmissionPipeline:
                     submission.processing_status = "failed"
                     submission.error_message = str(e)
                     await db.commit()
+
+class AutomatedBatchPipeline:
+    @staticmethod
+    async def run(submission_id: int):
+        try:
+            # 1. Validation
+            await ValidationService.process_submission(submission_id)
+            
+            async with AsyncSessionLocal() as db:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                if not submission or submission.processing_status in ["failed", "rejected_invalid_npi"]:
+                    return
+                npi = submission.npi
+                
+            # 2. Enrichment
+            await EnrichmentService.enrich_provider(submission_id, npi)
+            
+            async with AsyncSessionLocal() as db:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                if not submission or submission.processing_status == "failed":
+                    return
+
+                # Get provider for next steps
+                stmt = select(ProviderPersonal).options(
+                    selectinload(ProviderPersonal.meta),
+                    selectinload(ProviderPersonal.professional)
+                ).filter(ProviderPersonal.npi == npi)
+                result = await db.execute(stmt)
+                provider = result.scalars().first()
+                
+                if not provider:
+                    return
+
+                # 3. Email Update
+                if provider.email:
+                    submission.processing_status = "email_verifying"
+                    await db.commit()
+                    try:
+                        from Agents.email_agent import EmailVerificationAgent
+                        from datetime import timedelta
+                        email_agent = EmailVerificationAgent(base_url="http://localhost:3000")
+                        token = email_agent.generate_verification_token()
+                        
+                        if not provider.meta:
+                            provider.meta = ProviderMeta(npi=npi)
+                            
+                        provider.meta.verification_token = token
+                        provider.meta.token_expires_at = datetime.utcnow() + timedelta(hours=48)
+                        await db.commit()
+                        
+                        link = email_agent.create_verification_link(token)
+                        email_agent.send_verification_email(
+                            recipient_email=provider.email,
+                            recipient_name=provider.display_name or "Doctor",
+                            verification_link=link
+                        )
+                        logger.info(f"Auto-pipeline: Email sent to {provider.email}")
+                    except Exception as e:
+                        logger.error(f"Auto-pipeline: Email sending failed - {e}")
+
+                # 4. Call Verification
+                if provider.phone:
+                    from Agents.call_agent import CallVerificationAgent
+                    import os
+                    raw_phone = "".join(filter(str.isdigit, str(provider.phone)))
+                    if raw_phone[-10:] == "6369764886":
+                        submission.processing_status = "call_verifying"
+                        await db.commit()
+                        try:
+                            webhook_base = os.getenv("WEBHOOK_BASE_URL", "http://localhost:8000")
+                            call_agent = CallVerificationAgent(webhook_base_url=webhook_base)
+                            call_agent.initiate_verification_call(
+                                provider_id=npi,
+                                to_number=provider.phone,
+                                provider_name=provider.display_name or provider.last_name or "Doctor"
+                            )
+                            logger.info(f"Auto-pipeline: Call initiated to {provider.phone}")
+                        except Exception as e:
+                            logger.error(f"Auto-pipeline: Call initiation failed - {e}")
+                    else:
+                        logger.warning(f"Auto-pipeline: Rejecting call to {provider.phone}. Only 6369764886 is allowed.")
+                        submission.error_message = (submission.error_message or "") + " | Call skipped (unverified number)"
+                        await db.commit()
+
+                # Mark complete
+                if submission.processing_status not in ["failed", "rejected_invalid_npi"]:
+                    submission.processing_status = "pipeline_complete"
+                    await db.commit()
+
+        except Exception as e:
+            logger.error(f"❌ Automated Pipeline Failed: {e}")
+            async with AsyncSessionLocal() as db:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                if submission:
+                    submission.processing_status = "failed"
+                    submission.error_message = str(e)
+                    await db.commit()

@@ -344,6 +344,7 @@ async def get_submission_status(submission_id: int, db: AsyncSession = Depends(g
 @app.post("/onboard/csv")
 async def onboard_csv_upload(
     background_tasks: BackgroundTasks,
+    mode: str = Form("manual"),
     file: UploadFile = File(...), 
     db: AsyncSession = Depends(get_db)
 ):
@@ -387,10 +388,14 @@ async def onboard_csv_upload(
         for sub in submissions_created:
             await db.refresh(sub)
             # Process in background so UI gets control back immediately
-            background_tasks.add_task(ValidationService.process_submission, sub.submission_id)
+            if mode == 'auto':
+                from services import AutomatedBatchPipeline
+                background_tasks.add_task(AutomatedBatchPipeline.run, sub.submission_id)
+            else:
+                background_tasks.add_task(ValidationService.process_submission, sub.submission_id)
             
         return {
-            "message": f"Queued {processed_count} submissions for processing."
+            "message": f"Queued {processed_count} submissions for processing in {mode} mode."
         }
         
     except Exception as e:
@@ -807,6 +812,10 @@ async def initiate_provider_call(provider_id: str, request: Request, db: AsyncSe
         if not provider.phone:
             raise HTTPException(status_code=400, detail="Provider has no phone number on record")
             
+        raw_phone = "".join(filter(str.isdigit, str(provider.phone)))
+        if raw_phone[-10:] != "6369764886":
+            raise HTTPException(status_code=400, detail="Number not verified. Twilio sandbox allows only 6369764886")
+            
             
         # Prioritize WEBHOOK_BASE_URL from env
         import os
@@ -870,11 +879,18 @@ async def twilio_call_webhook(
 ):
     """
     Webhook for Twilio TwiML responses during the call.
-    Each step returns XML (TwiML) text that Twilio parses out.
+    Handles the full 9-step verification flow:
+    start → confirm_identity → verify_npi → explain_purpose → ask_updates
+          → process_update → confirm_update → more_updates → closing/no_updates
     """
     logger.info(f"Twilio Webhook: Provider {provider_id} | Step {step} | SpeechResult: {SpeechResult} | Digits: {Digits}")
     
-    # Broadcast to SSE
+    # Parse query params for retry attempt counter and encoded update data
+    query_params = request.query_params
+    attempt = int(query_params.get("attempt", 1))
+    encoded_data = query_params.get("data", None)
+    
+    # Broadcast to SSE for frontend live-tracking
     if provider_id in provider_call_events:
         await provider_call_events[provider_id].put({
             "step": step,
@@ -883,7 +899,7 @@ async def twilio_call_webhook(
             "timestamp": datetime.utcnow().isoformat()
         })
     
-    # Needs to return valid application/xml response
+    # Load provider from DB
     result = await db.execute(select(ProviderPersonal).options(
         selectinload(ProviderPersonal.professional),
         selectinload(ProviderPersonal.meta)
@@ -893,26 +909,39 @@ async def twilio_call_webhook(
     if not provider:
          return Response(content="<Response><Say>Invalid Provider ID. Goodbye.</Say><Hangup/></Response>", media_type="application/xml")
          
-    # Generate provider data dict to pass
+    # Build provider data dict for the agent
     provider_data = {
         "last_name": provider.last_name,
+        "first_name": provider.first_name,
+        "npi": provider.npi,
         "practice_name": provider.professional.practice_name if provider.professional else None,
         "address_line1": provider.address_line1,
         "city": provider.city,
+        "state": provider.state,
+        "phone": provider.phone,
+        "email": provider.email,
+        "website": provider.professional.website if provider.professional else None,
+        "telehealth": provider.professional.telehealth if provider.professional else None,
+        "accepting_new_patients": provider.professional.accepting_new_patients if provider.professional else None,
     }
     
     call_agent = CallVerificationAgent()
-    xml_response, extracted_updates = call_agent.generate_twiml_for_step(provider_id, step, provider_data, SpeechResult, Digits)
+    xml_response, extracted_updates = call_agent.generate_twiml_for_step(
+        provider_id, step, provider_data, SpeechResult, Digits, attempt=attempt
+    )
     
-    # If final step, we update status to verified_by_provider
-    if step == "process_update" and extracted_updates:
+    # ─── APPLY UPDATES ON confirm_update (provider pressed 1) ───
+    if step == "confirm_update" and Digits == "1" and encoded_data:
         try:
+            import base64
+            updates_json = base64.urlsafe_b64decode(encoded_data.encode()).decode()
+            confirmed_updates = json.loads(updates_json)
+            
             if not provider.meta:
                 provider.meta = ProviderMeta(npi=provider.npi)
              
-            for field, val in extracted_updates.items():
+            for field, val in confirmed_updates.items():
                 if not val: continue
-                # simple mapping (in a real scenario, use more robust mapping/validation)
                 if field in ["address_line1", "city", "state", "postal_code", "phone", "email"]:
                     old_val = getattr(provider, field, None)
                     if is_significant_change(field, old_val, val):
@@ -920,35 +949,57 @@ async def twilio_call_webhook(
                         log_field_change(db, provider.npi, field, old_val, val, 'phone_verification', 'personal', 'provider')
                         if provider.professional and field in ["address_line1", "city", "state", "postal_code"]:
                             setattr(provider.professional, field, val)
-                        
+                    
                 elif field in ["practice_name", "website", "accepting_new_patients", "telehealth"]:
                      if provider.professional:
                          old_val = getattr(provider.professional, field, None)
                          if is_significant_change(field, old_val, val):
                              setattr(provider.professional, field, val)
                              log_field_change(db, provider.npi, field, old_val, val, 'phone_verification', 'professional', 'provider')
-             
+            
+            await db.commit()
+            logger.info(f"✅ Saved confirmed updates for {provider.npi}: {confirmed_updates}")
+            
+            # Broadcast to SSE
+            if provider_id in provider_call_events:
+                await provider_call_events[provider_id].put({
+                    "step": "update_saved",
+                    "updates": confirmed_updates,
+                    "timestamp": datetime.utcnow().isoformat()
+                })
+                
+        except Exception as e:
+            await db.rollback()
+            logger.error(f"Error saving confirmed updates: {e}")
+
+    # ─── SET STATUS ON CLOSING OR NO_UPDATES ───
+    if step in ("closing", "no_updates"):
+        try:
+            if not provider.meta:
+                provider.meta = ProviderMeta(npi=provider.npi)
+            
             old_status = provider.meta.status
             provider.meta.status = "verified_by_provider"
             provider.meta.overall_confidence = 100.0
-             
+            
             log_field_change(db, provider.npi, 'status', old_status, 'verified_by_provider', 'phone_verification', 'meta', 'provider')
             await db.commit()
             
-            # Broadcast update success
+            # Broadcast completion
             if provider_id in provider_call_events:
                 await provider_call_events[provider_id].put({
                     "step": "completed",
-                    "updates": extracted_updates,
+                    "status": "verified_by_provider",
                     "timestamp": datetime.utcnow().isoformat()
                 })
              
-            logger.info(f"Verified & updated {provider.npi} purely via phone interaction! Updates: {extracted_updates}")
+            logger.info(f"✅ Provider {provider.npi} verified via phone call (step: {step})")
         except Exception as e:
             await db.rollback()
-            logger.error(f"Error verifying provider via phone call: {e}")
+            logger.error(f"Error setting verified status: {e}")
 
     return Response(content=xml_response, media_type="application/xml")
+
 
 
 
@@ -1014,6 +1065,11 @@ async def batch_call_providers(
             res = await dbs.execute(select(ProviderPersonal).filter(ProviderPersonal.npi == npi_id))
             p = res.scalars().first()
             if p and p.phone:
+                raw_phone = "".join(filter(str.isdigit, str(p.phone)))
+                if raw_phone[-10:] != "6369764886":
+                    logger.warning(f"Skipping call for {npi_id}: Number not verified. Twilio sandbox allows only 6369764886")
+                    return
+                
                 import os
                 webhook_base = os.getenv("WEBHOOK_BASE_URL")
                 if not webhook_base:
