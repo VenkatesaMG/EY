@@ -91,8 +91,10 @@ const OnboardingForm = ({ onBatchUploadSuccess, onSingleUploadSuccess }) => {
                 first_name: extracted.first_name || prev.first_name,
                 last_name: extracted.last_name || prev.last_name,
                 practice_name: extracted.practice_name || extracted.organization_name || prev.practice_name,
-                address_line1: extracted.address_line1 || extracted.address || prev.address_line1,
+                address_line1: extracted.locations?.[0]?.street_address_1 || extracted.address_line1 || extracted.address || prev.address_line1,
                 primary_email: extracted.primary_email || prev.primary_email,
+                phone: extracted.locations?.[0]?.phone || extracted.phone || prev.phone,
+                website: extracted.website_url || extracted.website || prev.website,
                 type: extracted.provider_type === "Organization" ? "Hospital" : "Doctor"
             }));
 
