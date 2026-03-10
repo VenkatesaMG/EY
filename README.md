@@ -1,471 +1,257 @@
 # 🏥 HealthValidator.ai
 
-**AI-Powered Healthcare Provider Data Validation & Enrichment Platform**
+**AI-Powered Healthcare Provider Data Validation, Enrichment & Governance Platform**
 
-A full-stack application that automates the onboarding, validation, enrichment, and governance of healthcare provider data. It combines real-time NPI Registry verification, LLM-powered analysis (Groq / Llama 3), web-scraping enrichment, and email-based provider verification into a single, cohesive pipeline.
+A cutting-edge full-stack application designed to automate the onboarding, validation, enrichment, and governance of healthcare provider directory data. It leverages real-time NPI Registry verifications, Large Language Model (LLM) powered semantic analysis (Groq / Llama 3.3 70B), autonomous web scraping algorithms, and multi-modal provider interactions (SMTP Emails, Twilio AI Voice Calls) within a single unified pipeline. 
 
 ---
 
 ## 📑 Table of Contents
 
 - [Overview](#overview)
-- [Architecture](#architecture)
-- [Data Flow](#data-flow)
-- [Tech Stack & Tools](#tech-stack--tools)
-- [Project Structure](#project-structure)
+- [Key Features](#key-features)
+- [System Architecture](#system-architecture)
+- [AI Agents Ecosystem](#ai-agents-ecosystem)
+- [Data Validation & Enrichment Flow](#data-validation--enrichment-flow)
 - [Database Schema](#database-schema)
-- [AI Agents](#ai-agents)
-- [API Endpoints](#api-endpoints)
-- [Frontend Pages](#frontend-pages)
+- [Technology Stack](#technology-stack)
+- [API Reference](#api-reference)
+- [Frontend Modules](#frontend-modules)
 - [Getting Started](#getting-started)
 - [Environment Variables](#environment-variables)
 
 ---
 
-## Overview
+## 🎯 Overview
 
-Healthcare payers and networks need accurate, up-to-date provider directories. Manual validation is slow, error-prone, and doesn't scale. **HealthValidator.ai** solves this by:
+Healthcare payers, networks, and organizations heavily rely on accurate, up-to-date provider directories. The traditional approach—manual credentialing and validation—is painstakingly slow, prone to human error, and completely unscalable. **HealthValidator.ai** disrupts this paradigm by taking a multi-layered, automated approach:
 
-1. **Ingesting** provider data via manual form entry, PDF/image upload (OCR), or CSV batch import.
-2. **Validating** every record against the official **NPPES NPI Registry** using deterministic matching algorithms (Levenshtein distance, Jaccard similarity).
-3. **Comparing** submitted data to NPI data with an **LLM (Groq — Llama 3)** for semantic field-by-field analysis.
-4. **Enriching** incomplete records by scraping the open web (DuckDuckGo + Selenium) and querying the **Hunter.io Email API**.
-5. **Scoring** each record with a weighted **confidence score** and flagging anything below threshold for manual review.
-6. **Verifying** providers directly via **email verification links** (SMTP).
-7. **Auditing** every field-level change in a full **audit trail**.
-8. **Analyzing** geographic provider distribution on an interactive **US Map** with AI-driven conversational insights.
+1. **Intelligent Ingestion**: Support for manual entries, CSV bulk uploads, and OCR-based PDF/Image data extraction.
+2. **Deterministic & Semantic Validation**: Compares ingested data against the official **NPPES NPI Registry** using classical fuzzy matching (Levenshtein, Jaccard) paired with field-by-field LLM semantic analysis.
+3. **Autonomous Enrichment**: Fills missing data gaps by scraping the open web (DuckDuckGo + Selenium headless Chrome) and verifying emails against the **Hunter.io Email API**.
+4. **Multi-Modal Verification**: Engages providers directly when data confidence is low through **Twilio AI Voice Calls** (with NPI keypad verification and speech-to-text updates) or **Email Verification Portals**.
+5. **Human-in-the-Loop Review**: Intuitive dashboard displaying confidence scores, side-by-side diff table comparisons, and an immutable audit trail for governance.
+6. **Geospatial Intelligence**: Visualizes provider distributions on an interactive US map equipped with a native AI chat panel that has contextual awareness of the current view and a ReAct agent mapping network adequacy gaps.
 
 ---
 
-## Architecture
+## ✨ Key Features
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         FRONTEND (React 19)                        │
-│  ┌───────────┐ ┌───────────┐ ┌──────────────┐ ┌────────────────┐  │
-│  │ Onboarding│ │ Dashboard │ │Provider Detail│ │  US Map +      │  │
-│  │   Form    │ │  (List)   │ │  (Drill-down) │ │  Analysis Chat │  │
-│  └─────┬─────┘ └─────┬─────┘ └──────┬───────┘ └───────┬────────┘  │
-│        │              │              │                 │            │
-│        └──────────────┴──────────────┴─────────────────┘            │
-│                              │ REST API (port 3000)                 │
-└──────────────────────────────┼──────────────────────────────────────┘
-                               │
-                               ▼
-┌──────────────────────────────────────────────────────────────────────┐
-│                     BACKEND (FastAPI + Uvicorn)                      │
-│                           port 8000                                  │
-│  ┌──────────────┐  ┌──────────────────┐  ┌───────────────────────┐  │
-│  │  main.py     │  │   services.py    │  │      models.py        │  │
-│  │  (Endpoints) │──│  (Business Logic)│──│  (SQLAlchemy ORM)     │  │
-│  └──────┬───────┘  └────────┬─────────┘  └───────────┬───────────┘  │
-│         │                   │                        │              │
-│  ┌──────┴───────────────────┴────────────────────────┘              │
-│  │                                                                   │
-│  │  ┌─────────────────┐  ┌──────────────────┐  ┌────────────────┐  │
-│  │  │ Extractor Agent │  │ Enrichment Agent  │  │  Email Agent   │  │
-│  │  │ (OCR + LLM)     │  │ (Web + LLM)      │  │  (SMTP)        │  │
-│  │  └────────┬────────┘  └────────┬─────────┘  └───────┬────────┘  │
-│  │           │                    │                     │           │
-│  │           ▼                    ▼                     ▼           │
-│  │     ┌──────────┐     ┌──────────────┐        ┌────────────┐     │
-│  │     │Groq LLM  │     │DuckDuckGo    │        │Gmail SMTP  │     │
-│  │     │(Llama 3) │     │+ Selenium    │        │Server      │     │
-│  │     └──────────┘     │+ Hunter.io   │        └────────────┘     │
-│  │                      └──────────────┘                           │
-│  └──────────────────────────────────────────────────────────────────┘
-│                               │                                      │
-└───────────────────────────────┼──────────────────────────────────────┘
-                                ▼
-                  ┌──────────────────────────┐
-                  │   PostgreSQL Database    │
-                  │   (6 tables via asyncpg) │
-                  └──────────────────────────┘
-                                │
-                  ┌─────────────┼─────────────┐
-                  ▼             ▼             ▼
-           ┌───────────┐ ┌──────────┐ ┌────────────┐
-           │ NPI       │ │ Groq API │ │ Hunter.io  │
-           │ Registry  │ │ (LLM)    │ │ Email API  │
-           │ (NPPES)   │ │          │ │            │
-           └───────────┘ └──────────┘ └────────────┘
+- **Document Parsing via OCR & LLM**: Pytesseract extracts raw text from user-uploaded PDFs/images, and Llama 3 structures it into rigorous JSON schemas.
+- **Dynamic Scoring Mechanism**: Calculates an overall trust score based on weighted criteria (e.g., matching NPIs carry more weight than matching phone strings). Profiles falling below a 70% threshold are flagged as "Needs Review."
+- **Twilio AI Voice Call Verification**: Deploys an AI voice agent (`CallVerificationAgent`) calling practitioners to verbally confirm/update their details. Captures text via speech recognition, analyzes it using an LLM to build a JSON diff, and live-streams events to the frontend via Server-Sent Events (SSE).
+- **Comprehensive Audit Trail**: Every modification—whether coming from the system, the AI Enrichment agent, or a manual review—is appended to `provider_audit_log` detailing old/new values, the exact timestamp, and the actor.
+- **LLM-Powered Map Chat**: Users can converse with the AI regarding the current states highlighted on the React map visualizations, providing instant insights regarding geospatial network adequacies.
+
+---
+
+## 🏗 System Architecture
+
+```text
+┌─────────────────────────────────────────────────────────────────────────┐
+│                           FRONTEND (React 19)                           │
+│  ┌────────────┐ ┌─────────────┐ ┌────────────────┐ ┌─────────────────┐  │
+│  │ Onboarding │ │  Dashboard  │ │ Provider Detail│ │ US Map + Chat   │  │
+│  │ (CSV/OCR)  │ │ (Analytics) │ │ (Manual Review)│ │ (Geo Analytics) │  │
+│  └──────┬─────┘ └──────┬──────┘ └───────┬────────┘ └────────┬────────┘  │
+│         │              │                │                   │           │
+│         └──────────────┴────────────────┴───────────────────┘           │
+│                                │ REST API + WebSockets/SSE              │
+└────────────────────────────────┼────────────────────────────────────────┘
+                                 ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                      BACKEND (FastAPI + Uvicorn)                        │
+│  ┌───────────────┐ ┌─────────────────┐ ┌─────────────────────────────┐  │
+│  │ main.py       │ │ services.py     │ │ models.py (SQLAlchemy ORM)  │  │
+│  │ (Routers/SSE) │ │(Business Logic) │ │ database.py (Asyncpg)       │  │
+│  └───────┬───────┘ └────────┬────────┘ └──────────────┬──────────────┘  │
+│          │                  │                         │                 │
+│  ┌───────┴──────────────────┴─────────────────────────┴──────────────┐  │
+│  │                        AGENTIC ECOSYSTEM                          │  │
+│  │ ┌────────────┐ ┌────────────┐ ┌───────────┐ ┌─────────────────┐   │  │
+│  │ │ Extractor  │ │ Enrichment │ │ Email Bot │ │ Twilio Call Bot │   │  │
+│  │ └─────┬──────┘ └─────┬──────┘ └─────┬─────┘ └────────┬────────┘   │  │
+│  └───────┼──────────────┼──────────────┼────────────────┼────────────┘  │
+└──────────┼──────────────┼──────────────┼────────────────┼───────────────┘
+           │              │              │                │
+┌──────────▼────┐ ┌───────▼──────┐ ┌─────▼──────┐ ┌───────▼───────────┐
+│ Groq LLM API  │ │ DuckDuckGo + │ │ Gmail SMTP │ │ Twilio Voice API  │
+│ (Llama 3 70B) │ │ Hunter.io    │ │ Server     │ │ (Webhooks/Audio)  │
+└───────────────┘ └──────────────┘ └────────────┘ └───────────────────┘
 ```
 
 ---
 
-## Data Flow
+## 🤖 AI Agents Ecosystem
 
-### 1️⃣ Provider Onboarding
+The system delegates responsibilities to isolated autonomous agents configured to handle robust external data extraction and interfacing:
 
-```
-User Input ──► Extractor Agent (if PDF/Image) ──► Structured JSON
-     │                                                  │
-     │         Manual Form / CSV Upload ────────────────┤
-     │                                                  │
-     └──────────────────────────────────────────────────┘
-                            │
-                            ▼
-                  Raw Provider Submission
-                  (saved in PostgreSQL)
-```
-
-### 2️⃣ Validation Pipeline
-
-```
-Raw Submission
-      │
-      ├──► 1. NPI Lookup (NPPES Registry API)
-      │         → Returns official provider data
-      │
-      ├──► 2. Deterministic Matching
-      │         → Levenshtein distance (names)
-      │         → Jaccard similarity (addresses)
-      │         → Exact match (NPI, taxonomy codes)
-      │
-      ├──► 3. LLM Comparison (Groq / Llama 3)
-      │         → Field-by-field semantic analysis
-      │         → Confidence scoring per field
-      │         → Issue identification
-      │
-      ├──► 4. Confidence Score Calculation
-      │         → Weighted score across all fields
-      │         → Records < 70% flagged for manual review
-      │
-      └──► 5. Data Governance & Conflict Resolution
-                → NPI data = source of truth for core fields
-                → Enrichment data fills gaps only
-                → Every change logged in audit trail
-```
-
-### 3️⃣ Enrichment Pipeline
-
-```
-Provider Record (after validation)
-      │
-      ├──► 1. Web Search (DuckDuckGo via Selenium)
-      │         → Scrapes top search results
-      │         → Collects practice info, websites, etc.
-      │
-      ├──► 2. Domain Discovery
-      │         → Finds the organization's official website
-      │         → Unwraps redirect URLs
-      │
-      ├──► 3. Hunter.io Email Lookup
-      │         → Uses org domain + provider name
-      │         → Returns verified email + confidence
-      │
-      └──► 4. LLM Structuring (Groq / Llama 3)
-                → Parses scraped web content
-                → Returns structured JSON with:
-                     practice_name, website, email,
-                     phone, accepting_new_patients,
-                     telehealth, languages, confidence
-```
-
-### 4️⃣ Email Verification
-
-```
-System ──► Generate secure token
-       ──► Send verification email (SMTP / simulation)
-       ──► Provider clicks link → Verification Portal
-       ──► Provider reviews & corrects data
-       ──► Data saved as "Verified" with audit log
-```
+1. **`extractor_agent.py`**: Operates on unstructured inputs. Bridges OCR libraries to read byte streams and feeds plaintext segments to Llama 3 for structured extraction.
+2. **`enrichment_agent_v0.py`**: Navigates the web contextually. For records missing websites or email addresses, this agent conducts sequential DuckDuckGo lookups, deploys headless Chrome to scrape textual context, unravels domains, and feeds them to Hunter.io.
+3. **`email_agent.py`**: Handles asynchronous SMTP operations. Formats secure 1-time JWT token verification links directing providers to a dedicated External Portal to self-verify data.
+4. **`call_agent.py`**: Integrating Twilio VoiceResponse (TwiML). Conducts interactive phone calls: (a) verifies identity via Keypad NPI entry, (b) asks open-ended questions about practice info, (c) intercepts speech results, (d) structurally extracts variables via the LLM, and (e) applies exact updates to the database!
+5. **`network_agent.py`**: A domain-specific ReAct agent dynamically parsing geospatial DB logic and generating insights regarding provider scarcities in rural parameters.
 
 ---
 
-## Tech Stack & Tools
+## 🔄 Data Validation & Enrichment Flow
 
-### Backend
-| Tool | Purpose |
-|------|---------|
-| **Python 3.10+** | Core language |
-| **FastAPI** | REST API framework |
-| **Uvicorn** | ASGI server |
-| **SQLAlchemy 2.0** | Async ORM (mapped columns) |
-| **asyncpg** | Async PostgreSQL driver |
-| **Pydantic** | Data validation & schema enforcement |
+### 1️⃣ Ingestion & Normalization
+Users submit via JSON forms, CSV batch tools, or upload standard document formats. The API catches raw inputs, caches them in `raw_provider_submissions`.
 
-### AI / LLM
-| Tool | Purpose |
-|------|---------|
-| **Groq Cloud API** | LLM inference (ultra-fast) |
-| **Llama 3.3 70B** | Model for comparison, extraction, enrichment, and analysis |
-| **LangChain Core** | Prompt templates and output parsers |
+### 2️⃣ Validation Matrix
+- **Registry API Sync**: System fetches NPI API.
+- **Fuzzy Math**: Evaluates Levenshtein similarities for Names. Jaccard tokenization for Addresses.
+- **Semantic Mapping**: Prompts Llama 3 to analyze nuances (e.g., "M.D." vs "Medical Doctor") and maps individual flags per column attributes.
+- **Conclusion**: Data sets graded out of 100 on a confidence metric.
 
-### Data Sources & APIs
-| Tool | Purpose |
-|------|---------|
-| **NPPES NPI Registry** | Official US provider validation (CMS) |
-| **Hunter.io** | Email discovery from domain + name |
-| **DuckDuckGo** | Web search for provider enrichment |
+### 3️⃣ Auto-Enrichment (If Applicable)
+If the DB detects hollow values (e.g. Missing `email` or `telehealth` bools), the Enrichment node queues the NPI. It explores contextual breadcrumbs online, returning structured schema elements accompanied by origin citations.
 
-### Web Scraping & Extraction
-| Tool | Purpose |
-|------|---------|
-| **Selenium** | Headless Chrome for web scraping |
-| **webdriver-manager** | Auto-manages ChromeDriver |
-| **PyPDF** | PDF text extraction |
-| **Pytesseract + Pillow** | OCR for image-based documents |
+### 4️⃣ Verification Modals (Resolving Conflicts)
+If System flags `< 70%` accuracy, users prompt AI Calls or Verify Emails. Modals expose Side-by-Side differences between:
+- "Submitted Data" vs "NPPES Truth Data" vs "Web Enriched Data".
 
-### Frontend
-| Tool | Purpose |
-|------|---------|
-| **React 19** | UI framework |
-| **Framer Motion** | Page transitions & animations |
-| **Lucide React** | Icon library |
-| **react-simple-maps** | Interactive US map visualization |
-| **D3 (scale + format)** | Data-driven map coloring & formatting |
-
-### Database
-| Tool | Purpose |
-|------|---------|
-| **PostgreSQL** | Primary relational database |
-| **asyncpg** | Non-blocking database I/O |
-
-### Email
-| Tool | Purpose |
-|------|---------|
-| **smtplib (Gmail SMTP)** | Sending verification emails |
-| **Simulation mode** | Falls back to console logging if SMTP not configured |
+Once manually approved or verified externally by the provider, the status bumps from `Needs Review` -> `Verified` globally.
 
 ---
 
-## Project Structure
+## 🗄 Database Schema
 
-```
-EY/
-├── .env                        # Environment variables (API keys, DB URL, SMTP)
-├── requirements.txt            # Python dependencies
-├── README.md                   # This file
-│
-├── Backend/
-│   ├── main.py                 # FastAPI app — all REST endpoints
-│   ├── services.py             # Business logic: ValidationService, EnrichmentService
-│   ├── models.py               # SQLAlchemy ORM models (6 tables)
-│   ├── database.py             # Async engine, session factory, init_db()
-│   ├── reset_db.py             # Script to recreate all tables
-│   ├── migrate_audit_log.py    # Migration script for audit trail table
-│   └── Tables/
-│       └── db.sql              # Raw SQL schema for reference
-│
-├── Agents/
-│   ├── extractor_agent.py      # OCR + LLM extraction from PDFs/images
-│   ├── enrichment_agent_v0.py  # Web scraping + Hunter.io + LLM enrichment
-│   ├── email_agent.py          # SMTP email verification agent
-│   ├── network_agent.py        # Network adequacy gap analysis (ReAct agent)
-│   ├── healthcare_schema.py    # Pydantic schema for provider profiles
-│   └── test_domain_finder.py   # Test script for domain discovery
-│
-├── Validation/
-│   ├── NPI.py                  # NPPES Registry API client
-│   ├── groq_client.py          # Groq API wrapper (generate_text)
-│   ├── groq_compare.py         # LLM-based field-by-field comparison
-│   ├── Validate.py             # Batch CSV validation runner
-│   └── gemini_compare.py       # Legacy Gemini comparison (deprecated)
-│
-├── Data/
-│   ├── Healthcare Providers.csv    # Full provider dataset
-│   ├── clean_output.csv            # Cleaned CSV for validation
-│   ├── sample_.csv                 # Sample data for testing
-│   └── *.csv                       # Validation output files
-│
-└── frontend/
-    ├── package.json
-    └── src/
-        ├── App.js                  # Root component with navigation
-        ├── App.css                 # Global styles (dark theme)
-        ├── OnboardingForm.js       # Provider onboarding (form + CSV + file upload)
-        ├── Dashboard.js            # Provider list with "Needs Review" / "Verified" split
-        ├── ProviderDetail.js       # Detailed provider view + audit trail + enrichment
-        ├── VerificationPage.js     # External verification portal (token-based)
-        ├── USMapAnalysis.js        # Interactive US map with AI analysis chat
-        ├── AnalysisPage.js         # Analysis page wrapper
-        └── ProcessTracker.js       # Real-time pipeline status tracker
-```
+Leverages **PostgreSQL** via non-blocking `asyncpg` bindings.
+
+| Core Table | Function / Scope |
+|---|---|
+| `providers_master_per` | Primary Index mapping `NPI` (PK), Names, Phones, Emails, Addresses. |
+| `providers_master_prof` | Maps `NPI` (FK) to Practice Name, Specialties, Taxonomy, Telehealth readiness, language traits. |
+| `providers_master_meta` | Internal application state. Tracks granular confidence % mapping strings, system `status`, and external verification tokens. |
+| `raw_provider_submissions`| Complete unmutated original data inputs mapped against exact NPI API raw responses natively. |
+| `provider_audit_log` | High-fidelity append-only ledger tracking `field_name`, `old_value`, `new_value`, `source_type` and Timestamp. |
+| `market_expansion` | Analytical caching layers measuring zip-level patient demands mapped to geographic network adequacies. |
 
 ---
 
-## Database Schema
+## 💻 Technology Stack
 
-The PostgreSQL database uses **6 normalized tables**:
+### Backend Environment
+- **Core**: Python 3.10+, FastAPI framework, Uvicorn ASGI Server.
+- **Database**: PostgreSQL asynchronously managed natively via SQLAlchemy 2.0 ORM tools.
+- **Scraping Toolkit**: Selenium / WebDriver-Manager.
+- **Integrations**: Twilio Python SDK, Tesseract OCR binaries, PyPDF.
 
-| Table | Purpose |
-|-------|---------|
-| `providers_master_per` | **Personal info** — NPI (PK), name, phone, email, address |
-| `providers_master_prof` | **Professional info** — practice name, specialties, taxonomies, telehealth, languages |
-| `providers_master_meta` | **Validation metadata** — confidence scores per field, status, verification tokens, quality flags |
-| `raw_provider_submissions` | **Submission log** — raw input payloads, NPI API responses, processing status |
-| `market_expansion_opportunities` | **Analytics** — network adequacy, demand index, expansion priority scoring |
-| `provider_audit_log` | **Audit trail** — field-level change history with old/new values, source, actor, timestamp |
+### LLM Infrastructures
+- **Engine**: Groq Cloud accelerated inference. Models typically default to Meta's open weights (`Llama-3-70b-8192` or variant).
+- **Tooling**: LangChain core templates / formatting configurations.
 
-Each provider record spans 3 linked tables (`per` → `prof` → `meta`) connected by the NPI as a foreign key.
-
----
-
-## AI Agents
-
-### 🔍 Extractor Agent (`extractor_agent.py`)
-Extracts structured provider data from unstructured documents (PDFs, images) using OCR (Pytesseract) and an LLM (Groq / Llama 3) to produce a `HealthcareProviderProfile` Pydantic object.
-
-### 🌐 Enrichment Agent (`enrichment_agent_v0.py`)
-A multi-step agent that:
-1. Searches DuckDuckGo for the provider/organization.
-2. Scrapes top results using headless Selenium.
-3. Discovers the organization's official domain.
-4. Calls Hunter.io to find the provider's email.
-5. Feeds all gathered text to the LLM to produce structured enrichment data.
-
-### ✉️ Email Verification Agent (`email_agent.py`)
-Generates secure tokens, constructs verification links, and sends HTML emails via SMTP (or simulates in dev mode).
-
-### 📊 Network Gap Agent (`network_agent.py`)
-A ReAct-style agent that analyzes network adequacy by computing geographic coverage gaps for specific specialties using geodesic distance calculations.
+### Frontend Application
+- **Core**: React 19, custom hook infrastructures, styled completely dynamically.
+- **Motion Patterns**: Framer Motion (page transitions, staggering micro-interactions).
+- **Mapping**: `react-simple-maps` wrapped with `D3.js` mathematical scales formatting geoJSON topologies.
+- **Comms**: Server-Sent Events hooks for streaming Twilio webhooks cleanly into UI banners.
 
 ---
 
-## API Endpoints
+## 🔌 API Reference
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/extract` | Upload PDF/image → OCR + LLM extraction |
-| `POST` | `/submit` | Submit provider data → starts validation pipeline |
-| `GET` | `/status/{id}` | Poll real-time pipeline step statuses |
-| `POST` | `/onboard/csv` | Batch CSV upload and processing |
-| `GET` | `/providers` | List all providers (paginated) |
-| `GET` | `/providers/{id}` | Get provider details by NPI |
-| `POST` | `/seed-mock` | Seed database with sample data |
-| `POST` | `/reset` | Reset database (danger!) |
-| `POST` | `/verify-email/{id}` | Trigger email verification for a provider |
-| `GET` | `/verify/{token}` | Retrieve data for verification portal |
-| `POST` | `/verify/{token}` | Submit verified/corrected data |
-| `POST` | `/enrich/{id}` | Manually trigger enrichment for a provider |
-| `POST` | `/enrich/batch` | Batch enrichment for multiple providers |
-| `GET` | `/audit/{id}` | Get audit trail for a provider |
-| `GET` | `/geo/distribution` | Provider distribution by state |
-| `GET` | `/geo/specialties` | List of unique specialties |
-| `POST` | `/analyze/map` | AI analysis of geographic data |
-| `GET` | `/analyze/context-data` | Fetch filtered context for analysis chat |
-| `POST` | `/analyze/chat` | Multi-turn conversational analysis |
+*(Brief subset of critical system endpoints running on Port 8000)*
+
+- **Core Pipelines**:
+  - `POST /submit` - Pushes JSON into validation algorithms.
+  - `POST /extract` - Ingests `.pdf`/`.png` yielding extracted structured maps.
+  - `POST /onboard/csv` - Fast-track unthrottled batch queues mapping external provider files.
+- **Agent Triggers**:
+  - `POST /enrich/{npi}` - Dispatches headless instance grabbing DuckDuckGo results for targeted provider.
+  - `POST /verify-email/{npi}` - Distributes tokenized SMTP verifier packets.
+  - `POST /twilio/call/{npi}` - Bootstraps Twilio agent placing live IVR calls to the designated mobile number via ngrok channels.
+- **Data Layers**:
+  - `GET /providers` - Global fetched indices.
+  - `GET /providers/{npi}` - Drill down returning `_per`, `_prof`, `_meta` mapped JSONs.
+  - `GET /audit/{npi}` - Exposes full audit histories.
+- **Analysis Engine**:
+  - `POST /analyze/chat` - LLM contextual conversational router.
 
 ---
 
-## Frontend Pages
+## 🎨 Frontend Modules
 
-### 📋 Onboarding Form
-- **Manual entry**: Fill in provider details field-by-field.
-- **File upload**: Upload a PDF or image for OCR-based extraction.
-- **CSV batch import**: Upload a CSV file to process hundreds of providers at once.
-- Real-time pipeline status tracking via `ProcessTracker`.
-
-### 📊 Dashboard
-- Split view: **"Needs Review"** (confidence < 70%) vs. **"Verified"** providers.
-- Provider cards with confidence badges and status indicators.
-- Click-through to detailed provider view.
-
-### 🔎 Provider Detail
-- Tabbed interface: **Overview** | **Professional** | **History** (Audit Trail).
-- Field-level confidence indicators with source attribution.
-- One-click **Enrich** button to trigger the enrichment pipeline.
-- One-click **Send Verification Email** to initiate provider outreach.
-
-### 🗺️ US Map & Analysis
-- Interactive choropleth map of provider distribution by state.
-- Specialty-based filtering.
-- **AI Chat**: Multi-turn conversational analysis powered by Groq (Llama 3) with full contextual data injection.
-
-### ✅ Verification Portal
-- Token-based external page for providers.
-- Displays pre-filled data for review and correction.
-- Submissions mark the record as "Verified" with full audit trail.
+1. **Dashboard UI** - A high-polish card-driven interface segmenting profiles by risk / review requirements. Auto-refreshes data blocks dynamically avoiding re-renders. 
+2. **Onboarding Integration** - Incorporates robust pre-fills bridging raw file byte uploads cleanly toward the ultimate input form. Post upload immediately routes toward the Profile view or Map depending on batch volume.
+3. **Manual Review Console** - Optimized for Data Stewards comparing divergent columns (Old vs New vs Canonical). Implements accessible, tight-spaced semantic components mitigating scrolling fatigue.
+4. **Geo Charting Views** - Vector mapped state topologies visually delineating provider saturation vs shortage locales interactively. 
 
 ---
 
-## Getting Started
+## 🚀 Getting Started
 
 ### Prerequisites
-- **Python 3.10+**
-- **Node.js 18+**
-- **PostgreSQL** (running locally or remotely)
-- **Google Chrome** (for Selenium headless scraping)
-- **Tesseract OCR** (for image extraction — [install guide](https://github.com/tesseract-ocr/tesseract))
+- Node.js 18.x
+- Python 3.10 or higher
+- PostgreSQL Server 14+
+- Tesseract OCR Native Binaries (Crucial for Images)
 
-### 1. Clone & Install Backend
-
+### 1. Database Sockets
 ```bash
-# Install Python dependencies
-pip install -r requirements.txt
-```
-
-### 2. Set Up Database
-
-```bash
-# Create the PostgreSQL database
+# Provision root DB natively via PSQL
 createdb HealthCare
-
-# Or run the SQL schema manually:
+# Alter schema manually if bypassing declarative base implementations
 psql -d HealthCare -f Backend/Tables/db.sql
 ```
 
-### 3. Configure Environment
-
-Create a `.env` file in the project root (see [Environment Variables](#environment-variables)).
-
-### 4. Start Backend
-
+### 2. Backend Orchestration
 ```bash
+# Resolve and map standard python requirements
+pip install -r requirements.txt
+
+# Boot the API server in developer reflection mode
 cd Backend
-uvicorn main:app --reload
-# API available at http://localhost:8000
+uvicorn main:app --reload --port 8000
 ```
 
-### 5. Install & Start Frontend
-
+### 3. Frontend Compilation
 ```bash
+# Node module resolutions
 cd frontend
 npm install
+# Ignite the react runtime
 npm start
-# UI available at http://localhost:3000
 ```
-
-### 6. Seed Sample Data (Optional)
-
-Hit the seed endpoint to populate the database with sample providers:
-```bash
-curl -X POST http://localhost:8000/seed-mock
-```
+*Application lives structurally at `http://localhost:3000`*
 
 ---
 
-## Environment Variables
+## 🔒 Environment Variables
 
-Create a `.env` file in the project root with the following:
+Store in root `.env` mapping local machine parameters:
 
 ```env
-# Database
-DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/HealthCare
+# Essential Paths
+DATABASE_URL=postgresql+asyncpg://user:password@localhost:5432/HealthCare
 
-# LLM - Groq Cloud
-GROQ_API_KEY=your_groq_api_key
+# Language Model Configurations
+GROQ_API_KEY=gsk_my_groq_api_token
+GEMINI_API_KEY=legacy_gemini_fallback_optional
 
-# Email Finder
-HUNTER_API=your_hunter_io_api_key
+# Enrichment APIs
+HUNTER_API=hunter.io_secret_node
 
-# Email Verification (SMTP)
+# Verification SMTP Block
 SMTP_SERVER=smtp.gmail.com
 SMTP_PORT=587
-SMTP_USERNAME=your_email@gmail.com
-SMTP_PASSWORD=your_app_password
-SENDER_EMAIL=your_email@gmail.com
+SMTP_USERNAME=app_email@gmail.com
+SMTP_PASSWORD=gmail_app_router_password
+SENDER_EMAIL=app_email@gmail.com
 
-# Legacy (optional)
-GEMINI_API_KEY=your_gemini_key
+# Twilio IVR Block
+TWILIO_ACCOUNT_SID=ACxyz123abc 
+TWILIO_AUTH_TOKEN=secret_twilio_auth
+TWILIO_PHONE_NUMBER=+1234567890
+WEBHOOK_BASE_URL=https://my-ngrok-tunnel.ngrok.app
 ```
 
-> **Note**: If SMTP credentials are not configured, the Email Agent runs in **simulation mode** and logs verification links to the console instead of sending real emails.
+> **Fallback Notes**: The system gracefully decays if keys are empty. Empty Twilio runs mock print statements, empty SMTP outputs terminal links allowing smooth localized tests.
 
 ---
 
 <p align="center">
-  <em>Built with ❤️ for smarter healthcare data governance</em>
+  <em>Developed to ensure absolute parity within dynamic healthcare credentialing spaces</em>
 </p>

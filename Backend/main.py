@@ -204,12 +204,18 @@ async def submit_provider(
     db: AsyncSession = Depends(get_db)
 ):
     try:
-        logger.info(f"📨 New Submission: NPI={data.get('npi')} | Name={data.get('first_name', '')} {data.get('last_name', '')}")
+        npi_val = data.get("npi") or ""
+        npi_val = npi_val.strip()
+        if not npi_val:
+            npi_val = f"TEMP_{uuid4().hex[:8].upper()}"
+            data["npi"] = npi_val
+
+        logger.info(f"📨 New Submission: NPI={npi_val} | Name={data.get('first_name', '')} {data.get('last_name', '')}")
         
         # Create Raw Submission
         submission = RawProviderSubmission(
             source="form",
-            npi=data.get("npi"),
+            npi=npi_val,
             input_payload=data,
             processing_status="queued" # Initial state
         )
@@ -385,14 +391,22 @@ async def onboard_csv_upload(
         await db.commit()
         
         processed_count = len(submissions_created)
-        for sub in submissions_created:
-            await db.refresh(sub)
-            # Process in background so UI gets control back immediately
-            if mode == 'auto':
-                from services import AutomatedBatchPipeline
-                background_tasks.add_task(AutomatedBatchPipeline.run, sub.submission_id)
-            else:
-                background_tasks.add_task(ValidationService.process_submission, sub.submission_id)
+        submission_ids = [sub.submission_id for sub in submissions_created]
+        
+        async def run_concurrently(ids, mode_str):
+            import asyncio
+            from services import AutomatedBatchPipeline, ValidationService
+            tasks = []
+            # Gather tasks so they run concurrently rather than sequentially
+            for sid in ids:
+                if mode_str == 'auto':
+                    tasks.append(asyncio.create_task(AutomatedBatchPipeline.run(sid)))
+                else:
+                    tasks.append(asyncio.create_task(ValidationService.process_submission(sid)))
+            await asyncio.gather(*tasks, return_exceptions=True)
+            
+        # Add single background task that manages the concurrent batch execution
+        background_tasks.add_task(run_concurrently, submission_ids, mode)
             
         return {
             "message": f"Queued {processed_count} submissions for processing in {mode} mode."
@@ -1214,14 +1228,12 @@ TOP 5 STATES BY SUBMISSIONS:
 FULL STATE DATA:
 {json.dumps(data.get('states', []), indent=2)}
 
-Please provide a comprehensive analysis that includes:
-1. Key insights about the geographic distribution
-2. Notable patterns or trends
-3. States with high vs low submission rates
-4. Potential implications for healthcare provider network coverage
-5. Recommendations for improving distribution if needed
+Provide a concise analysis (3-4 sentences max) covering:
+- Top states and any notable gaps
+- One key trend or implication
+- One actionable recommendation
 
-Format your response in clear, readable paragraphs suitable for display in a UI.
+Be direct and brief. No headers or lengthy paragraphs.
 """
         
         # Use Groq instead of Gemini
@@ -1389,7 +1401,7 @@ IMPORTANT GUIDELINES:
 - When the user asks about specific states, providers, or specialties, reference the real data.
 - Provide specific numbers, percentages, and comparisons when possible.
 - If the user asks about data you don't have, clearly state that.
-- Keep responses concise but insightful. Use bullet points and bold text for readability.
+- Keep responses EXTREMELY concise and strictly to the point. Avoid fluff or filler words. Use short bullet points and bold text for readability.
 - You can suggest follow-up questions the user might want to ask.
 - Format your response with markdown for readability (bold, bullets, headers).
 """
@@ -1408,7 +1420,7 @@ IMPORTANT GUIDELINES:
             model="llama-3.3-70b-versatile",
             messages=groq_messages,
             temperature=0.7,
-            max_tokens=4096,
+            max_tokens=1024,
             top_p=1,
             stream=False
         )

@@ -140,23 +140,27 @@ class EnrichmentManager:
     ---
 
     ### STRATEGY & WORKFLOW (ReAct Loop)
-
+ 
     **INSTRUCTIONS:**
-    1.  **Search Initial**: Start by searching for `Provider Name + NPI + City`.
-    2.  **Scrape Verification**: Identify high-trust sources from the search results. You **MUST** use the `scrape_webpage` tool to verify details.
-    3.  **Source Fusion**: Resolve conflicts by checking multiple sources. Ensure all missing fields are checked.
-
+    1.  **Analyze Clues**: You will receive a `CLEAN PROVIDER CONTEXT`. This contains **verified clues only**. 
+    2.  **Generate Strategic Queries**: Based **ONLY** on the context provided, synthesize search queries.
+        - **IMPORTANT**: NEVER include the words "None", "Null", or "Unknown" in your search queries. If a field isn't in the context, do not mention it in the query.
+        - *Example*: If you only have a Name, search `[Name] medical profile`. 
+        - *Example*: If you have a Name and City, search `[Name] NPI [City]`.
+    3.  **Search & Scrape**: Use `search_web` for discovery and `scrape_webpage` for detailed extraction.
+    4.  **Resolve Conflicts**: If sources disagree, prioritize medical board registries and official hospital directories.
+ 
     ### CRITICAL EXTRACTION AND FUSION RULES
-
+ 
     These rules override generalized thinking and ensure accurate data capture from messy text:
-
+ 
     1.  **Aggressive Pattern Matching**:
-        * **Phone/Fax**: If you see a number formatted like `(XXX) XXX-XXXX` or `XXX-XXX-XXXX` near an address or in a contact section, **capture it**. If a number is followed by 'F' or 'Fx', label it as 'Fax'. Assume any unlabeled ten-digit number near an address is the primary phone number.
-        * **Address**: Capture the entire block of address text (Street, City, State, ZIP). Do not abbreviate city names.
+        * **Phone/Fax**: If you see a number formatted like `(XXX) XXX-XXXX` or `XXX-XXX-XXXX` near an address or in a contact section, **capture it**. If a number is followed by 'F' or 'Fx', label it as 'Fax'.
+        * **Address**: Capture the entire block of address text (Street, City, State, ZIP).
     2.  **Contextual Inference**:
         * If the scraped page title or URL matches the Provider Name or Organization Name, **ALL contact details** on that page are inferred to belong to that entity.
     3.  **Ambiguity Handling (The Golden Rule)**:
-        * If the scraped text provides **multiple distinct practice locations or phone numbers**, list all of them in a structured way within your final JSON. Do **NOT** choose one arbitrarily. *The organization may have multiple practice sites.*
+        * If the scraped text provides **multiple distinct practice locations or phone numbers**, list all of them.
     4.  **Final Consolidation**: After all searching is complete, merge **all verified data** into the final JSON structure. Unfound data points should be returned as `null`.
 
     ---
@@ -179,12 +183,20 @@ class EnrichmentManager:
         """
 
     def enrich_profile(self, partial_profile: dict, missing_keys: list):
+        # We now expect a CLEANED profile with NO 'None' strings
+        context_json = json.dumps(partial_profile, indent=2)
+        
         user_query = (
-            f"Find missing details for:\n"
-            f"Name: {partial_profile.get('first_name')} {partial_profile.get('last_name')}, {partial_profile.get('credential')}\n"
-            f"Location: {partial_profile.get('city')}, {partial_profile.get('state')}\n"
-            f"NPI: {partial_profile.get('npi')}\n\n"
-            f"FIND THESE MISSING KEYS: {missing_keys}\n"
+            f"### CLEAN PROVIDER CONTEXT:\n"
+            f"{context_json}\n\n"
+            f"### MISSING FIELDS TO FIND:\n"
+            f"{missing_keys}\n\n"
+            f"### TASK:\n"
+            f"1. STUDY the context above. These are the ONLY facts known.\n"
+            f"2. GENERATE search queries using ONLY these facts. \n"
+            f"   - **CRITICAL**: DO NOT use 'None' or 'Null' in any search query.\n"
+            f"3. EXECUTE searching/scraping to recover the missing fields.\n"
+            f"4. RETURN the final enriched JSON."
         )
 
         messages = [

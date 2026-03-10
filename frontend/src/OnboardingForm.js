@@ -350,8 +350,7 @@ const OnboardingForm = ({ onBatchUploadSuccess, onSingleUploadSuccess }) => {
                                     name="npi"
                                     value={formData.npi}
                                     onChange={handleInputChange}
-                                    placeholder="10-digit NPI"
-                                    required
+                                    placeholder="10-digit NPI (Optional)"
                                 />
                             </div>
                             <div className="form-group" style={{ marginBottom: 0 }}>

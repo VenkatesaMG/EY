@@ -184,49 +184,55 @@ class ValidationService:
                 logger.error(f"⚠️ Failed to pre-create provider: {e}")
                 # Continue anyway, main pipeline will handle it
             
-            logger.info(f"🔍 Step 1: NPI Registry Lookup for {npi_val}")
+            is_temp_npi = npi_val and str(npi_val).startswith("TEMP_")
+
+            if is_temp_npi:
+                logger.info(f"⏭️ Skipping NPI Lookup for TEMP NPI: {npi_val}")
+                npi_info = {}
+            else:
+                logger.info(f"🔍 Step 1: NPI Registry Lookup for {npi_val}")
+                    
+                try:
+                    npi_info = lookup_npi(npi_val)
+                    submission.npi_api_response = npi_info
+                    await db.commit()  # Save NPI response immediately
+                    logger.info(f"✅ NPI Lookup Complete")
+                except Exception as e:
+                    logger.error(f"❌ NPI Lookup Failed: {e}")
+                    submission.processing_status = "failed"
+                    submission.error_message = f"NPI API Error: {str(e)}"
+                    
+                    # Update Provider Meta to failed so user knows
+                    stmt_fail = select(ProviderMeta).filter(ProviderMeta.npi == npi_val)
+                    res_fail = await db.execute(stmt_fail)
+                    meta_fail = res_fail.scalars().first()
+                    if meta_fail:
+                        meta_fail.status = "failed"
+                        flags =  meta_fail.data_quality_flags or []
+                        if "npi_api_error" not in flags:
+                             flags.append("npi_api_error")
+                        meta_fail.data_quality_flags = flags
+                        
+                    await db.commit()
+                    return # Retry later?
+
+            if not npi_info and not is_temp_npi:
+                submission.processing_status = "rejected_invalid_npi"
+                submission.error_message = "NPI not found in registry"
                 
-            try:
-                npi_info = lookup_npi(npi_val)
-                submission.npi_api_response = npi_info
-                await db.commit()  # Save NPI response immediately
-                logger.info(f"✅ NPI Lookup Complete")
-            except Exception as e:
-                logger.error(f"❌ NPI Lookup Failed: {e}")
-                submission.processing_status = "failed"
-                submission.error_message = f"NPI API Error: {str(e)}"
-                
-                # Update Provider Meta to failed so user knows
+                # Update Provider Meta to rejected
                 stmt_fail = select(ProviderMeta).filter(ProviderMeta.npi == npi_val)
                 res_fail = await db.execute(stmt_fail)
                 meta_fail = res_fail.scalars().first()
                 if meta_fail:
-                    meta_fail.status = "failed"
-                    flags =  meta_fail.data_quality_flags or []
-                    if "npi_api_error" not in flags:
-                         flags.append("npi_api_error")
+                    meta_fail.status = "rejected"
+                    flags = meta_fail.data_quality_flags or []
+                    if "invalid_npi" not in flags:
+                         flags.append("invalid_npi")
                     meta_fail.data_quality_flags = flags
                     
                 await db.commit()
-                return # Retry later?
-
-        if not npi_info:
-            submission.processing_status = "rejected_invalid_npi"
-            submission.error_message = "NPI not found in registry"
-            
-            # Update Provider Meta to rejected
-            stmt_fail = select(ProviderMeta).filter(ProviderMeta.npi == npi_val)
-            res_fail = await db.execute(stmt_fail)
-            meta_fail = res_fail.scalars().first()
-            if meta_fail:
-                meta_fail.status = "rejected"
-                flags = meta_fail.data_quality_flags or []
-                if "invalid_npi" not in flags:
-                     flags.append("invalid_npi")
-                meta_fail.data_quality_flags = flags
-                
-            await db.commit()
-            return
+                return
         # Log deterministic verification start
         logger.info(f"🤖 Step 2: Conflict Resolution in progress...")
 
@@ -289,7 +295,7 @@ class ValidationService:
             # Formula: (NPI_Exact * 40) + (Name_Sim * 0.2) + (Addr_Sim * 0.2) + (Phone * 10) ... roughly
             # Simplified based on user request:
             # Base 40 for NPI existing (which is true here)
-            score = 40.0
+            score = 0.0 if npi_val.startswith("TEMP_") else 40.0
             
             # Name Sim (Max 20 points)
             score += (name_score / 100.0) * 20.0
@@ -360,48 +366,49 @@ class ValidationService:
 
             # 1. LOCKED FIELDS (NPI Source)
             # We always overwrite with NPI data if available, regardless of input
-            log_field_change(db, npi_val, 'first_name', provider.first_name, npi_info.get('first_name'), 'npi_lookup', 'personal')
-            provider.first_name = npi_info.get("first_name")
-            update_meta(provider, 'first_name', 'npi')
-            
-            log_field_change(db, npi_val, 'last_name', provider.last_name, npi_info.get('last_name'), 'npi_lookup', 'personal')
-            provider.last_name = npi_info.get("last_name")
-            update_meta(provider, 'last_name', 'npi')
-            
-            if npi_info.get("enumeration_type") == "NPI-2":
-                org_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name")
-                log_field_change(db, npi_val, 'display_name', provider.display_name, org_name, 'npi_lookup', 'personal')
-                provider.display_name = org_name
-            else:
-                new_display = f"{provider.first_name} {provider.last_name}".strip()
-                log_field_change(db, npi_val, 'display_name', provider.display_name, new_display, 'npi_lookup', 'personal')
-                provider.display_name = new_display
-            update_meta(provider, 'display_name', 'npi')
+            if npi_info:
+                log_field_change(db, npi_val, 'first_name', provider.first_name, npi_info.get('first_name'), 'npi_lookup', 'personal')
+                provider.first_name = npi_info.get("first_name")
+                update_meta(provider, 'first_name', 'npi')
+                
+                log_field_change(db, npi_val, 'last_name', provider.last_name, npi_info.get('last_name'), 'npi_lookup', 'personal')
+                provider.last_name = npi_info.get("last_name")
+                update_meta(provider, 'last_name', 'npi')
+                
+                if npi_info.get("enumeration_type") == "NPI-2":
+                    org_name = npi_info.get("raw", {}).get("basic", {}).get("organization_name")
+                    log_field_change(db, npi_val, 'display_name', provider.display_name, org_name, 'npi_lookup', 'personal')
+                    provider.display_name = org_name
+                else:
+                    new_display = f"{provider.first_name} {provider.last_name}".strip()
+                    log_field_change(db, npi_val, 'display_name', provider.display_name, new_display, 'npi_lookup', 'personal')
+                    provider.display_name = new_display
+                update_meta(provider, 'display_name', 'npi')
 
-            # Taxonomy Locked
-            if npi_info.get("primary_taxonomy"):
-                new_tax_code = npi_info.get("primary_taxonomy", {}).get("code")
-                log_field_change(db, npi_val, 'taxonomy_code', provider.professional.taxonomy_code, new_tax_code, 'npi_lookup', 'professional')
-                provider.professional.taxonomy_code = new_tax_code
-                provider.professional.taxonomies = npi_info.get("all_taxonomies", [])
-                
-                # Extract specialties from taxonomies
-                specialties_list = []
-                for tax in npi_info.get("all_taxonomies", []):
-                    desc = tax.get("desc")
-                    if desc and desc not in specialties_list:
-                        specialties_list.append(desc)
-                log_field_change(db, npi_val, 'specialties', str(provider.professional.specialties), str(specialties_list), 'npi_lookup', 'professional')
-                provider.professional.specialties = specialties_list
-                
-                update_meta(provider.professional, 'taxonomy_code', 'npi')
-                update_meta(provider.professional, 'specialties', 'npi')
+                # Taxonomy Locked
+                if npi_info.get("primary_taxonomy"):
+                    new_tax_code = npi_info.get("primary_taxonomy", {}).get("code")
+                    log_field_change(db, npi_val, 'taxonomy_code', provider.professional.taxonomy_code, new_tax_code, 'npi_lookup', 'professional')
+                    provider.professional.taxonomy_code = new_tax_code
+                    provider.professional.taxonomies = npi_info.get("all_taxonomies", [])
+                    
+                    # Extract specialties from taxonomies
+                    specialties_list = []
+                    for tax in npi_info.get("all_taxonomies", []):
+                        desc = tax.get("desc")
+                        if desc and desc not in specialties_list:
+                            specialties_list.append(desc)
+                    log_field_change(db, npi_val, 'specialties', str(provider.professional.specialties), str(specialties_list), 'npi_lookup', 'professional')
+                    provider.professional.specialties = specialties_list
+                    
+                    update_meta(provider.professional, 'taxonomy_code', 'npi')
+                    update_meta(provider.professional, 'specialties', 'npi')
 
             # 2. ENRICHABLE FIELDS (Scrape/Input Source)
             # Only update from input if NPI is empty OR if input is deemed high quality (e.g. website)
             
             # Phone: If NPI has it, use it. If not, use Input.
-            if npi_addr_dict.get("telephone_number"):
+            if npi_info and npi_addr_dict.get("telephone_number"):
                 log_field_change(db, npi_val, 'phone', provider.phone, npi_addr_dict.get('telephone_number'), 'npi_lookup', 'personal')
                 provider.phone = npi_addr_dict.get("telephone_number")
                 update_meta(provider, 'phone', 'npi')
@@ -412,7 +419,7 @@ class ValidationService:
 
             # Addresses: Keep NPI as primary for now (simplification), log mismatch
             # We store NPI address to ensure mailing works
-            if npi_addr_dict.get("address_1"):
+            if npi_info and npi_addr_dict.get("address_1"):
                 # Log address changes
                 log_field_change(db, npi_val, 'address_line1', provider.address_line1, npi_addr_dict.get('address_1'), 'npi_lookup', 'personal')
                 log_field_change(db, npi_val, 'city', provider.city, npi_addr_dict.get('city'), 'npi_lookup', 'personal')
@@ -576,27 +583,36 @@ class EnrichmentService:
                 submission.processing_status = "enriching"
                 await db.commit()
 
-            # ---- build profile ----
-
-            partial_profile = {
+            # ---- build profile (CLEANED) ----
+            # We filter out all Null/None/Empty values so the AI only sees valid clues.
+            raw_data = submission.input_payload if submission else {}
+            
+            # Create a clean dict of only non-empty values
+            context_data = {
                 "first_name": provider.first_name,
                 "last_name": provider.last_name,
+                "display_name": provider.display_name,
                 "credential": provider_prof.taxonomy_code,
                 "city": provider.city,
                 "state": provider.state,
                 "npi": provider.npi,
-                "missing_fields": missing_keys
             }
+            # Merge with raw submission but keep keys clean
+            for k, v in raw_data.items():
+                if k not in context_data: context_data[k] = v
+            
+            cleaned_profile = {k: v for k, v in context_data.items() if v and str(v).lower() not in ["none", "null", ""]}
+            
+            # Ensure missing_fields is always present
+            cleaned_profile["missing_fields"] = missing_keys
 
             try:
-
                 manager = EnrichmentManager()
-
                 loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(
                     None,
                     manager.enrich_profile,
-                    partial_profile,
+                    cleaned_profile,
                     submission_id
                 )
 
@@ -748,7 +764,15 @@ class SubmissionPipeline:
             # We only run validation. Enrichment and verification are now manual or batch actions.
             await ValidationService.process_submission(submission_id)
             
-            logger.info(f"🚀 Pipeline step 1 (Validation) complete for submission {submission_id}. Staying in 'NPI Check' for manual enrichment.")
+            async with AsyncSessionLocal() as db:
+                submission = await db.get(RawProviderSubmission, submission_id)
+                npi_val = submission.npi if submission else None
+                
+            if npi_val and str(npi_val).startswith("TEMP_"):
+                logger.info(f"🚀 TEMP NPI detected. Auto-triggering Enrichment for {npi_val}.")
+                await EnrichmentService.enrich_provider(submission_id, npi_val)
+            else:
+                logger.info(f"🚀 Pipeline step 1 (Validation) complete for submission {submission_id}. Staying in 'NPI Check' for manual enrichment.")
             
         except Exception as e:
             logger.error(f"❌ Pipeline Failed: {e}")

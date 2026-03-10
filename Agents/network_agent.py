@@ -87,7 +87,7 @@ class NetworkGapAgent:
         3. INTERPRET the data:
         - If `affected_member_count` > 0, declare a "Network Gap."
         - Suggest a recruitment strategy (e.g., "We need to recruit Cardiologists in the Northern region").
-        4. Output a professional summary.
+        4. Output a concise and to-the-point professional summary.
         """
 
     def run(self, user_query):
@@ -217,7 +217,7 @@ REACT_SYSTEM_PROMPT = """
         Action: analyze_specialty_gaps[JSON arguments]
         Observation: Tool result
         Thought: Interpretation
-        Final Answer: Professional summary with recommendation
+        Final Answer: Concise and to-the-point professional summary with recommendation
 
         Rules:
         - Always analyze before concluding

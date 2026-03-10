@@ -4,7 +4,7 @@ import './App.css';
 
 const AnalysisPage = () => {
     return (
-        <div className="analysis-page">
+        <div className="analysis-page" style={{ marginTop: '-1.5rem' }}>
             <USMapAnalysis />
         </div>
     );
